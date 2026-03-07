@@ -1,0 +1,8 @@
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo_square.jpg" # Fallback for older Android/iOS
+  
+  # Android Adaptive Icons
+  adaptive_icon_background: "#0C0B0A" # The brand's black background color
+  adaptive_icon_foreground: "assets/images/logo_circle.png"

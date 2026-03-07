@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lexi.example/schemas/remote_config_schema.json",
+  "title": "Lexi Remote App Config",
+  "description": "Remote app configuration published from WordPress for Flutter clients.",
+  "type": "object",
+  "required": [
+    "version",
+    "published_at",
+    "flags",
+    "navigation",
+    "home_layout",
+    "maintenance",
+    "force_update"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "flags": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "navigation": {
+      "type": "object",
+      "required": [
+        "tabs"
+      ],
+      "properties": {
+        "tabs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "enabled",
+              "order"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "enum": [
+                  "home",
+                  "categories",
+                  "cart",
+                  "orders",
+                  "profile",
+                  "support"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "home_layout": {
+      "type": "object",
+      "required": [
+        "sections"
+      ],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "enabled",
+              "order"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "banner",
+                  "featured",
+                  "categories",
+                  "brands",
+                  "flash_sale"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "payload": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "maintenance": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "message"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "force_update": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "min_build"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "min_build": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

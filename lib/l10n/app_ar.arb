@@ -1,0 +1,131 @@
+{
+    "@@locale": "ar",
+    "homeTitle": "الرئيسية",
+    "@homeTitle": {
+        "description": "Title of the Home Page"
+    },
+    "homeCategoriesTooltip": "الأقسام",
+    "@homeCategoriesTooltip": {
+        "description": "Tooltip for the categories icon in the app bar"
+    },
+    "homeErrorTitle": "تعذر تحميل الصفحة الرئيسية. حاول مرة أخرى.",
+    "@homeErrorTitle": {
+        "description": "Error message when home page fails to load"
+    },
+    "homeEmptyStateTitle": "لا توجد أقسام نشطة حالياً",
+    "@homeEmptyStateTitle": {
+        "description": "Text displayed when there are no home sections"
+    },
+    "homeHeaderTitle": "اكتشف ترتيب المنتجات المختارة بعناية في كل قسم",
+    "@homeHeaderTitle": {
+        "description": "Header text on the home page banner"
+    },
+    "actionViewAll": "عرض الكل",
+    "@actionViewAll": {
+        "description": "Button text to view all items in a section"
+    },
+    "actionAdd": "إضافة",
+    "@actionAdd": {
+        "description": "Button text to add a product to cart"
+    },
+    "actionShare": "مشاركة",
+    "@actionShare": {
+        "description": "Tooltip for share button"
+    },
+    "productAddedToCart": "تمت إضافة {productName} إلى السلة",
+    "@productAddedToCart": {
+        "description": "Message shown when a product is added to cart",
+        "placeholders": {
+            "productName": {
+                "type": "String",
+                "example": "iPhone 13"
+            }
+        }
+    },
+    "currencySymbol": "ل.س",
+    "@currencySymbol": {
+        "description": "Currency symbol appended to prices"
+    },
+    "appProfileTitle": "حسابي",
+    "appWishlistTitle": "المتجر المفضل",
+    "appPaymentTitle": "الدفع",
+    "appCheckoutTitle": "إتمام الطلب",
+    "appMyOrdersTitle": "طلباتي",
+    "loginWelcomeTitle": "مرحباً بك في Lexi Mega Store",
+    "loginSubtitle": "سجل الدخول للمتابعة",
+    "loginBiometric": "الدخول بالبصمة",
+    "loginWithPasswordOption": "أو سجل الدخول بكلمة المرور",
+    "loginEmailOrUsername": "البريد أو اسم المستخدم أو رقم الهاتف",
+    "loginPassword": "كلمة المرور",
+    "fieldRequired": "هذا الحقل مطلوب",
+    "loginForgotPassword": "نسيت كلمة المرور؟",
+    "loginButton": "تسجيل الدخول",
+    "loginCreateAccount": "إنشاء حساب جديد",
+    "loginContinueAsGuest": "متابعة كضيف",
+    "loginSuccess": "تم تسجيل الدخول بنجاح",
+    "loginPasswordFirst": "يرجى تسجيل الدخول بكلمة المرور أولاً.",
+    "loginBiometricUnavailable": "البصمة غير متاحة على هذا الجهاز.",
+    "loginBiometricFailed": "تعذر التحقق بالبصمة. حاول مرة أخرى.",
+    "loginSessionExpired": "انتهت صلاحية الجلسة. يرجى تسجيل الدخول بكلمة المرور.",
+    "loginFailedGeneric": "تعذر تسجيل الدخول. حاول مرة أخرى.",
+    "registerAppBarTitle": "إنشاء حساب جديد",
+    "registerSectionTitle": "بيانات التسجيل",
+    "registerCreateAccount": "إنشاء الحساب",
+    "registerHaveAccount": "لديك حساب بالفعل؟ تسجيل الدخول",
+    "registerWelcomeMessage": "مرحباً {name}، تم إنشاء الحساب بنجاح.",
+    "@registerWelcomeMessage": {
+        "placeholders": {
+            "name": {}
+        }
+    },
+    "registerUseCurrentLocation": "استخدام موقعي الحالي",
+    "registerAddressAutoFilled": "تم تعبئة العنوان من موقعك الحالي.",
+    "registerAddressFetchFailed": "تعذر جلب العنوان من الموقع.",
+    "registerFailedGeneric": "تعذر إنشاء الحساب. حاول مرة أخرى.",
+    "checkoutPrev": "السابق",
+    "checkoutNext": "التالي",
+    "checkoutConfirmOrder": "تأكيد الطلب",
+    "checkoutLoadCartFailed": "تعذر تحميل السلة.",
+    "checkoutCartEmpty": "السلة فارغة. أضف منتجات أولاً.",
+    "checkoutGoToCart": "الذهاب للسلة",
+    "checkoutLeaveTitle": "مغادرة صفحة إتمام الطلب؟",
+    "checkoutLeaveBody": "لديك بيانات غير محفوظة. هل تريد العودة إلى السلة؟",
+    "commonCancel": "إلغاء",
+    "checkoutLeaveAction": "مغادرة",
+    "ordersLoadFailed": "تعذر تحميل الطلبات حالياً. حاول مرة أخرى.",
+    "ordersEmptyTitle": "لا توجد طلبات بعد",
+    "ordersEmptyDesc": "عند إتمام أول طلب سيظهر هنا مع الحالة والتفاصيل.",
+    "ordersStartShopping": "ابدأ التسوق",
+    "ordersNumberPrefix": "طلب #{number}",
+    "@ordersNumberPrefix": {
+        "placeholders": {
+            "number": {}
+        }
+    },
+    "ordersTotalLabel": "الإجمالي: {total}",
+    "@ordersTotalLabel": {
+        "placeholders": {
+            "total": {}
+        }
+    },
+    "ordersItemsCountLabel": "عدد المنتجات: {count}",
+    "@ordersItemsCountLabel": {
+        "placeholders": {
+            "count": {}
+        }
+    },
+    "wishlistLoadFailed": "تعذر تحميل المفضلة",
+    "wishlistEmptyTitle": "قائمة المفضلة فارغة",
+    "wishlistBrowseProducts": "تصفح المنتجات",
+    "profileActionsTitle": "إجراءات الحساب",
+    "profileSettingsTitle": "الإعدادات",
+    "profileSupportTooltip": "الدعم",
+    "homeCategoriesTitle": "التصنيفات",
+    "homeCategoriesLoadFailed": "تعذر تحميل التصنيفات حالياً.",
+    "homeNoProductsNow": "لا توجد منتجات حالياً.",
+    "homeNoActiveCategories": "لا توجد فئات نشطة حالياً.",
+    "homeSearchHint": "ابحث عن المنتجات...",
+    "paymentInfoIntro": "اختيار وسيلة الدفع يتم أثناء إتمام الطلب.",
+    "paymentInfoSteps": "عد إلى السلة ثم اضغط \"إتمام الطلب\" للمتابعة.",
+    "paymentGoToCart": "الذهاب إلى السلة"
+}

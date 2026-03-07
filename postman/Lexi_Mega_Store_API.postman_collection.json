@@ -1,0 +1,702 @@
+{
+  "info": {
+    "_postman_id": "d264d95d-8cb8-4b73-a6be-3c1e0aa6f9bb",
+    "name": "Lexi Mega Store API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Home Sections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/home/sections?items_limit=12",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "home",
+                "sections"
+              ],
+              "query": [
+                {
+                  "key": "items_limit",
+                  "value": "12"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/categories?include_empty=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "include_empty",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/products?page=1&per_page=20&sort=manual",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "manual"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Product By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/products/{{product_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Suggest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/search/suggest?q=bag&limit=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "search",
+                "suggest"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "bag"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/search/products?q=bag&page=1&limit=20&sort=relevance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "search",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "bag"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "relevance"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{register_email}}\",\n  \"password\": \"{{password}}\",\n  \"username\": \"{{register_username}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\",\n  \"phone\": \"0999999999\",\n  \"address_1\": \"Damascus\",\n  \"city\": \"Damascus\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Date.now();",
+                  "pm.collectionVariables.set('register_email', `lexi_test_${ts}@example.com`);",
+                  "pm.collectionVariables.set('register_username', `lexi_test_${ts}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let j = {};",
+                  "try { j = pm.response.json(); } catch (e) {}",
+                  "const data = j && j.data ? j.data : {};",
+                  "const regEmail = pm.collectionVariables.get('register_email');",
+                  "if (regEmail) pm.collectionVariables.set('email', regEmail);",
+                  "if (data.access_token) pm.collectionVariables.set('access_token', data.access_token);",
+                  "if (data.refresh_token) pm.collectionVariables.set('refresh_token', data.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let j = {};",
+                  "try { j = pm.response.json(); } catch (e) {}",
+                  "const data = j && j.data ? j.data : {};",
+                  "if (data.access_token) pm.collectionVariables.set('access_token', data.access_token);",
+                  "if (data.refresh_token) pm.collectionVariables.set('refresh_token', data.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let j = {};",
+                  "try { j = pm.response.json(); } catch (e) {}",
+                  "const data = j && j.data ? j.data : {};",
+                  "if (data.access_token) pm.collectionVariables.set('access_token', data.access_token);",
+                  "if (data.refresh_token) pm.collectionVariables.set('refresh_token', data.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wishlist",
+      "item": [
+        {
+          "name": "Get Wishlist",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/wishlist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "wishlist"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Toggle Wishlist",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": {{product_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/wishlist/toggle",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "wishlist",
+                "toggle"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Unread Count (Customer)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/notifications/unread-count?audience=customer&device_id={{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "notifications",
+                "unread-count"
+              ],
+              "query": [
+                {
+                  "key": "audience",
+                  "value": "customer"
+                },
+                {
+                  "key": "device_id",
+                  "value": "{{device_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Notifications (Customer)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/notifications?audience=customer&page=1&per_page=20&device_id={{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "audience",
+                  "value": "customer"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "device_id",
+                  "value": "{{device_id}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Lookup Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": {{order_id}},\n  \"phone\": \"{{phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/orders/lookup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "orders",
+                "lookup"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Track Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": {{order_id}},\n  \"phone\": \"{{phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/orders/track",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "orders",
+                "track"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Orders By Phone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wp-json/lexi/v1/orders/by-phone",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "wp-json",
+                "lexi",
+                "v1",
+                "orders",
+                "by-phone"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://leximega.store"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "device_id",
+      "value": "web-local-device-001"
+    },
+    {
+      "key": "email",
+      "value": "test@example.com"
+    },
+    {
+      "key": "password",
+      "value": "12345678"
+    },
+    {
+      "key": "username",
+      "value": "lexi_test_user"
+    },
+    {
+      "key": "register_email",
+      "value": ""
+    },
+    {
+      "key": "register_username",
+      "value": ""
+    },
+    {
+      "key": "phone",
+      "value": "0999999999"
+    },
+    {
+      "key": "product_id",
+      "value": "20598"
+    },
+    {
+      "key": "category_id",
+      "value": "33"
+    },
+    {
+      "key": "order_id",
+      "value": "1"
+    }
+  ]
+}

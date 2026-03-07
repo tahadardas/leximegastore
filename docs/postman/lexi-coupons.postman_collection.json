@@ -1,0 +1,223 @@
+{
+  "info": {
+    "_postman_id": "3fce3ea2-6749-4b18-880e-88f26411f0cf",
+    "name": "Lexi Coupons API",
+    "description": "Collection to validate coupon flow end-to-end (validate + admin CRUD + checkout).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Validate Coupon (Public)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"{{coupon_code}}\",\n  \"cart_total\": 120000,\n  \"items\": [\n    {\n      \"product_id\": {{product_id}},\n      \"quantity\": 2,\n      \"variation_id\": 0\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/coupons/validate",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "coupons",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - List Coupons",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/admin/coupons",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "admin",
+            "coupons"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Create Coupon",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"{{new_coupon_code}}\",\n  \"discount_type\": \"fixed_cart\",\n  \"amount\": 5000,\n  \"description\": \"خصم تجريبي\",\n  \"usage_limit\": 100,\n  \"minimum_amount\": 25000,\n  \"maximum_amount\": 999999,\n  \"individual_use\": false,\n  \"exclude_sale_items\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/admin/coupons",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "admin",
+            "coupons"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Update Coupon",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 7000,\n  \"minimum_amount\": 50000,\n  \"maximum_amount\": 200000\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/admin/coupons/{{coupon_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "admin",
+            "coupons",
+            "{{coupon_id}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Delete Coupon",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/admin/coupons/{{coupon_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "admin",
+            "coupons",
+            "{{coupon_id}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Checkout Create Order (With Coupon)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer\": {\n    \"name\": \"Test User\",\n    \"phone\": \"0999999999\",\n    \"email\": \"\"\n  },\n  \"address\": {\n    \"city_id\": {{city_id}},\n    \"street\": \"Damascus\",\n    \"notes\": \"\"\n  },\n  \"items\": [\n    {\n      \"product_id\": {{product_id}},\n      \"variation_id\": 0,\n      \"qty\": 1\n    }\n  ],\n  \"payment_method\": \"cod\",\n  \"coupon\": \"{{coupon_code}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/wp-json/lexi/v1/checkout/create-order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "wp-json",
+            "lexi",
+            "v1",
+            "checkout",
+            "create-order"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://leximega.store"
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "coupon_code",
+      "value": "SAVE10"
+    },
+    {
+      "key": "new_coupon_code",
+      "value": "NEWYEAR10"
+    },
+    {
+      "key": "coupon_id",
+      "value": "0"
+    },
+    {
+      "key": "product_id",
+      "value": "1"
+    },
+    {
+      "key": "city_id",
+      "value": "1"
+    }
+  ]
+}
+

@@ -1,0 +1,131 @@
+{
+    "@@locale": "en",
+    "homeTitle": "Home",
+    "@homeTitle": {
+        "description": "Title of the Home Page"
+    },
+    "homeCategoriesTooltip": "Categories",
+    "@homeCategoriesTooltip": {
+        "description": "Tooltip for the categories icon in the app bar"
+    },
+    "homeErrorTitle": "Failed to load home page. Please try again.",
+    "@homeErrorTitle": {
+        "description": "Error message when home page fails to load"
+    },
+    "homeEmptyStateTitle": "No active sections available currently",
+    "@homeEmptyStateTitle": {
+        "description": "Text displayed when there are no home sections"
+    },
+    "homeHeaderTitle": "Discover carefully selected products in every category",
+    "@homeHeaderTitle": {
+        "description": "Header text on the home page banner"
+    },
+    "actionViewAll": "View All",
+    "@actionViewAll": {
+        "description": "Button text to view all items in a section"
+    },
+    "actionAdd": "Add",
+    "@actionAdd": {
+        "description": "Button text to add a product to cart"
+    },
+    "actionShare": "Share",
+    "@actionShare": {
+        "description": "Tooltip for share button"
+    },
+    "productAddedToCart": "{productName} added to cart",
+    "@productAddedToCart": {
+        "description": "Message shown when a product is added to cart",
+        "placeholders": {
+            "productName": {
+                "type": "String",
+                "example": "iPhone 13"
+            }
+        }
+    },
+    "currencySymbol": "SYP",
+    "@currencySymbol": {
+        "description": "Currency symbol appended to prices"
+    },
+    "appProfileTitle": "Profile",
+    "appWishlistTitle": "Wishlist Store",
+    "appPaymentTitle": "Payment",
+    "appCheckoutTitle": "Checkout",
+    "appMyOrdersTitle": "My Orders",
+    "loginWelcomeTitle": "Welcome to Lexi Mega Store",
+    "loginSubtitle": "Sign in to continue",
+    "loginBiometric": "Sign in with biometrics",
+    "loginWithPasswordOption": "Or sign in with password",
+    "loginEmailOrUsername": "Email or username",
+    "loginPassword": "Password",
+    "fieldRequired": "This field is required",
+    "loginForgotPassword": "Forgot password?",
+    "loginButton": "Sign in",
+    "loginCreateAccount": "Create new account",
+    "loginContinueAsGuest": "Continue as guest",
+    "loginSuccess": "Signed in successfully",
+    "loginPasswordFirst": "Please sign in with password first.",
+    "loginBiometricUnavailable": "Biometric authentication is unavailable on this device.",
+    "loginBiometricFailed": "Biometric authentication failed. Please try again.",
+    "loginSessionExpired": "Session expired. Please sign in with password.",
+    "loginFailedGeneric": "Unable to sign in. Please try again.",
+    "registerAppBarTitle": "Create Account",
+    "registerSectionTitle": "Registration Details",
+    "registerCreateAccount": "Create Account",
+    "registerHaveAccount": "Already have an account? Sign in",
+    "registerWelcomeMessage": "{name}, your account has been created successfully.",
+    "@registerWelcomeMessage": {
+        "placeholders": {
+            "name": {}
+        }
+    },
+    "registerUseCurrentLocation": "Use current location",
+    "registerAddressAutoFilled": "Address filled from your current location.",
+    "registerAddressFetchFailed": "Failed to fetch address from location.",
+    "registerFailedGeneric": "Unable to create account. Please try again.",
+    "checkoutPrev": "Previous",
+    "checkoutNext": "Next",
+    "checkoutConfirmOrder": "Confirm Order",
+    "checkoutLoadCartFailed": "Unable to load cart.",
+    "checkoutCartEmpty": "Cart is empty. Add products first.",
+    "checkoutGoToCart": "Go to cart",
+    "checkoutLeaveTitle": "Leave checkout page?",
+    "checkoutLeaveBody": "You have unsaved data. Return to cart?",
+    "commonCancel": "Cancel",
+    "checkoutLeaveAction": "Leave",
+    "ordersLoadFailed": "Unable to load orders right now. Please try again.",
+    "ordersEmptyTitle": "No orders yet",
+    "ordersEmptyDesc": "Your orders will appear here once you complete checkout.",
+    "ordersStartShopping": "Start shopping",
+    "ordersNumberPrefix": "Order #{number}",
+    "@ordersNumberPrefix": {
+        "placeholders": {
+            "number": {}
+        }
+    },
+    "ordersTotalLabel": "Total: {total}",
+    "@ordersTotalLabel": {
+        "placeholders": {
+            "total": {}
+        }
+    },
+    "ordersItemsCountLabel": "Items: {count}",
+    "@ordersItemsCountLabel": {
+        "placeholders": {
+            "count": {}
+        }
+    },
+    "wishlistLoadFailed": "Unable to load wishlist",
+    "wishlistEmptyTitle": "Wishlist is empty",
+    "wishlistBrowseProducts": "Browse products",
+    "profileActionsTitle": "Account Actions",
+    "profileSettingsTitle": "Settings",
+    "profileSupportTooltip": "Support",
+    "homeCategoriesTitle": "Categories",
+    "homeCategoriesLoadFailed": "Unable to load categories right now.",
+    "homeNoProductsNow": "No products available currently.",
+    "homeNoActiveCategories": "No active categories currently.",
+    "homeSearchHint": "Search for products...",
+    "paymentInfoIntro": "Payment method is selected during checkout.",
+    "paymentInfoSteps": "Go back to cart then tap \"Checkout\" to continue.",
+    "paymentGoToCart": "Go to cart"
+}

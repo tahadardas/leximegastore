@@ -1,0 +1,407 @@
+{
+	"info": {
+		"name": "Lexi Store API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://lexistore.sy/wp-json/lexi/v1",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "YOUR_BEARER_TOKEN_HERE",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Public & Products",
+			"item": [
+				{
+					"name": "Get Products",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/products?page=1&per_page=20",
+							"host": ["{{base_url}}"],
+							"path": ["products"],
+							"query": [
+								{"key": "page", "value": "1"},
+								{"key": "per_page", "value": "20"}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Product Details",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/products/123",
+							"host": ["{{base_url}}"],
+							"path": ["products", "123"]
+						}
+					}
+				},
+				{
+					"name": "Get Product Reviews",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/products/123/reviews",
+							"host": ["{{base_url}}"],
+							"path": ["products", "123", "reviews"]
+						}
+					}
+				},
+				{
+					"name": "Get Similar Products",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/products/123/similar",
+							"host": ["{{base_url}}"],
+							"path": ["products", "123", "similar"]
+						}
+					}
+				},
+				{
+					"name": "Get Categories",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/categories",
+							"host": ["{{base_url}}"],
+							"path": ["categories"]
+						}
+					}
+				},
+				{
+					"name": "Get Category by ID",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/categories/1",
+							"host": ["{{base_url}}"],
+							"path": ["categories", "1"]
+						}
+					}
+				},
+				{
+					"name": "Home Sections",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/home/sections",
+							"host": ["{{base_url}}"],
+							"path": ["home", "sections"]
+						}
+					}
+				},
+				{
+					"name": "Home Ad Banners",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/home/ad-banners",
+							"host": ["{{base_url}}"],
+							"path": ["home", "ad-banners"]
+						}
+					}
+				},
+				{
+					"name": "Search Suggest",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/search/suggest?q=test&limit=10",
+							"host": ["{{base_url}}"],
+							"path": ["search", "suggest"],
+							"query": [
+								{"key": "q", "value": "test"},
+								{"key": "limit", "value": "10"}
+							]
+						}
+					}
+				},
+				{
+					"name": "Search Products",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/search?q=test&page=1&per_page=20",
+							"host": ["{{base_url}}"],
+							"path": ["search"],
+							"query": [
+								{"key": "q", "value": "test"},
+								{"key": "page", "value": "1"},
+								{"key": "per_page", "value": "20"}
+							]
+						}
+					}
+				},
+				{
+					"name": "Trending Searches",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/search/trending",
+							"host": ["{{base_url}}"],
+							"path": ["search", "trending"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{"key": "Content-Type", "value": "application/json"}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{"key": "Content-Type", "value": "application/json"}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"123456\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"phone\": \"0912345678\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register"]
+						}
+					}
+				},
+				{
+					"name": "Get Profile (Me)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/auth/me",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "me"]
+						}
+					}
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "POST",
+						"header": [
+							{"key": "Content-Type", "value": "application/json"}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Smith\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "profile"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Checkout & Orders",
+			"item": [
+				{
+					"name": "Get Shipping Cities",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/shipping/cities",
+							"host": ["{{base_url}}"],
+							"path": ["shipping", "cities"]
+						}
+					}
+				},
+				{
+					"name": "Get ShamCash Config",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/payments/shamcash/config",
+							"host": ["{{base_url}}"],
+							"path": ["payments", "shamcash", "config"]
+						}
+					}
+				},
+				{
+					"name": "Create Order",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "POST",
+						"header": [
+							{"key": "Content-Type", "value": "application/json"}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"customer\": {\n    \"name\": \"John Doe\",\n    \"phone\": \"0912345678\",\n    \"email\": \"john@example.com\"\n  },\n  \"address\": {\n    \"city_id\": 1,\n    \"street\": \"Main Street\"\n  },\n  \"items\": [\n    {\n      \"product_id\": 123,\n      \"qty\": 1\n    }\n  ],\n  \"payment_method\": \"cod\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/checkout/create-order",
+							"host": ["{{base_url}}"],
+							"path": ["checkout", "create-order"]
+						}
+					}
+				},
+				{
+					"name": "My Orders",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/my-orders",
+							"host": ["{{base_url}}"],
+							"path": ["my-orders"]
+						}
+					}
+				},
+				{
+					"name": "Track Order",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/track-order?id=123",
+							"host": ["{{base_url}}"],
+							"path": ["track-order"],
+							"query": [
+								{"key": "id", "value": "123"}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Wishlist",
+			"item": [
+				{
+					"name": "Get Wishlist",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/auth/wishlist",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "wishlist"]
+						}
+					}
+				},
+				{
+					"name": "Toggle Wishlist Item",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "POST",
+						"header": [
+							{"key": "Content-Type", "value": "application/json"}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"product_id\": 123,\n  \"action\": \"toggle\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/wishlist/toggle",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "wishlist", "toggle"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Support & Notifications",
+			"item": [
+				{
+					"name": "Get Support Tickets",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/support/my-tickets",
+							"host": ["{{base_url}}"],
+							"path": ["support", "my-tickets"]
+						}
+					}
+				},
+				{
+					"name": "Get Notifications",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/notifications",
+							"host": ["{{base_url}}"],
+							"path": ["notifications"]
+						}
+					}
+				},
+				{
+					"name": "Get Unread Notifications Count",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/notifications/unread-count",
+							"host": ["{{base_url}}"],
+							"path": ["notifications", "unread-count"]
+						}
+					}
+				}
+			]
+		}
+	]
+}

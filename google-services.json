@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "494798171237",
+    "project_id": "leximegastore-25c4d",
+    "storage_bucket": "leximegastore-25c4d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:494798171237:android:f7216713a68695ea6a2a8c",
+        "android_client_info": {
+          "package_name": "com.leximegastore.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCl4c8cnmz77S5GrCgIYK2_Fiwc7218kNM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,4 @@
+C:\Users\BIG\StudioProjects\leximegastore\lib\core\utils\text_normalizer.dart
+C:\Users\BIG\StudioProjects\leximegastore\lib\features\checkout\presentation\controllers\checkout_controller.dart
+C:\Users\BIG\StudioProjects\leximegastore\lib\features\home\presentation\pages\home_page.dart
+C:\Users\BIG\StudioProjects\leximegastore\lib\features\product\presentation\pages\product_page.dart
