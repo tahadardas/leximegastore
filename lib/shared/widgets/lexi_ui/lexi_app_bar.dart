@@ -27,7 +27,9 @@ class LexiAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.of(context).canPop();
+    final router = GoRouter.of(context);
+    final navigator = Navigator.of(context);
+    final canPop = router.canPop() || navigator.canPop();
     final hasDrawer = Scaffold.maybeOf(context)?.hasDrawer ?? false;
 
     Widget? resolvedLeading = leading;
@@ -44,10 +46,11 @@ class LexiAppBar extends StatelessWidget implements PreferredSizeWidget {
                 router.go('/');
               },
               child: Image.asset(
-                'assets/images/logo_square.jpg',
-                width: 36,
+                'assets/images/logo_long.jpg',
+                width: 120, // Adjusted for long logo
                 height: 36,
-                fit: BoxFit.cover,
+                fit: BoxFit
+                    .contain, // Changed to contain to preserve aspect ratio
               ),
             ),
           ),
@@ -56,7 +59,13 @@ class LexiAppBar extends StatelessWidget implements PreferredSizeWidget {
     }
     if (resolvedLeading == null && canPop) {
       resolvedLeading = IconButton(
-        onPressed: () => Navigator.of(context).maybePop(),
+        onPressed: () {
+          if (router.canPop()) {
+            router.pop();
+            return;
+          }
+          navigator.maybePop();
+        },
         icon: const FaIcon(
           FontAwesomeIcons.chevronRight,
           size: LexiIconSizes.sm,

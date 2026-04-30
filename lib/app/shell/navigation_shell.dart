@@ -1,7 +1,7 @@
 import 'package:convex_bottom_bar/convex_bottom_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 
@@ -24,6 +24,14 @@ class NavigationShell extends ConsumerStatefulWidget {
 }
 
 class _NavigationShellState extends ConsumerState<NavigationShell> {
+  String _currentPath(BuildContext context) {
+    try {
+      return GoRouterState.of(context).uri.path;
+    } catch (_) {
+      return GoRouter.of(context).routeInformationProvider.value.uri.path;
+    }
+  }
+
   int _currentIndexFromPath(String location) {
     if (location.startsWith(AppRoutePaths.categories)) return 1;
     if (location.startsWith(AppRoutePaths.deals)) return 2;
@@ -73,36 +81,11 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
 
   void _onTap(BuildContext context, int index) {
     final path = _pathForIndex(index);
-    final currentPath = GoRouterState.of(context).uri.path;
+    final currentPath = _currentPath(context);
     if (currentPath == path) {
       return;
     }
     context.goNamedSafe(_routeNameForIndex(index));
-  }
-
-  Future<void> _showExitDialog() async {
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('هل تريد الخروج من التطبيق؟'),
-        content: const Text('يمكنك المتابعة بالتسوق بالضغط على إلغاء.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('إلغاء'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: LexiColors.error),
-            child: const Text('خروج'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldExit == true) {
-      SystemNavigator.pop();
-    }
   }
 
   @override
@@ -123,19 +106,40 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
       if (cartCount > 0) 5: cartCount > 99 ? '99+' : '$cartCount',
     };
 
-    final routePath = GoRouterState.of(context).uri.path;
+    final routePath = _currentPath(context);
     final selectedIndex = _currentIndexFromPath(routePath);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final scaledNavHeight = textScaler.scale(58);
+    final navHeight = scaledNavHeight < 58
+        ? 58.0
+        : (scaledNavHeight > 74 ? 74.0 : scaledNavHeight);
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
-        if (selectedIndex != 0) {
-          context.goNamedSafe(AppRouteNames.home);
-        } else {
-          await _showExitDialog();
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          router.pop();
+          return;
         }
+
+        if (selectedIndex != 0 || routePath != AppRoutePaths.home) {
+          context.goNamedSafe(AppRouteNames.home);
+          return;
+        }
+
+        LexiAlert.confirm(
+          context,
+          title: 'تأكيد الخروج',
+          text: 'هل تريد الخروج من التطبيق؟',
+          confirmText: 'نعم',
+          cancelText: 'لا',
+          onConfirm: () {
+            SystemNavigator.pop();
+          },
+        );
       },
       child: Scaffold(
         body: widget.child,
@@ -155,7 +159,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
               activeColor: LexiColors.brandPrimary,
               color: LexiColors.gray500,
               elevation: 0,
-              height: 58,
+              height: navHeight,
               top: -10,
               style: TabStyle.react,
               items: const [

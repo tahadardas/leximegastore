@@ -49,5 +49,9 @@
 	<string>We use your location to speed up delivery.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>يستخدم التطبيق Face ID لفتح الشاشة بدلًا من رمز PIN.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

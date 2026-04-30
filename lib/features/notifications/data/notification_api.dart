@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,38 +8,56 @@ import '../../../core/device/device_id_provider.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/session/app_session.dart';
+import '../../../core/utils/safe_parsers.dart';
 import '../domain/entities/notification_entity.dart';
 
 final notificationApiProvider = Provider<NotificationApi>((ref) {
   return NotificationApi(
     ref.watch(dioClientProvider),
     ref.watch(appSessionProvider),
-    ref.watch(deviceIdProvider),
+    ref,
   );
 });
 
 class NotificationApi {
   final DioClient _client;
   final AppSession _session;
-  final AsyncValue<String> _deviceIdValue;
+  final Ref _ref;
   String? _adminAccessSignature;
   bool _adminAccessBlocked = false;
 
-  NotificationApi(this._client, this._session, this._deviceIdValue);
+  NotificationApi(this._client, this._session, this._ref);
+
+  bool get _useCustomerAuth => !kIsWeb && _session.isLoggedIn;
 
   String? get _deviceIdOrNull {
-    final id = _deviceIdValue.valueOrNull?.trim() ?? '';
+    final id = _ref.read(deviceIdProvider).valueOrNull?.trim() ?? '';
     return id.isEmpty ? null : id;
+  }
+
+  Future<String?> _getDeviceId() async {
+    final syncId = _deviceIdOrNull;
+    if (syncId != null) return syncId;
+
+    try {
+      final id = (await _ref.read(deviceIdProvider.future)).trim();
+      return id.isEmpty ? null : id;
+    } catch (e, s) {
+      unawaited(AppLogger.error('Failed to get device ID', e, s));
+      return null;
+    }
   }
 
   bool get _canTryAdmin => _session.isAdmin && _session.hasStoredToken;
 
   bool get _canTryCustomer {
-    // Customer notifications can work using either:
-    // - authenticated session (non-web)
-    // - device_id (guest or web-safe fallback)
-    if (_deviceIdOrNull != null) return true;
-    return !kIsWeb && _session.isLoggedIn && _session.hasStoredRefreshToken;
+    // Customer notifications should use one identity consistently:
+    // - authenticated session (non-web, logged-in users)
+    // - device_id (guests / web fallback)
+    if (_useCustomerAuth) {
+      return _session.hasStoredToken;
+    }
+    return _deviceIdOrNull != null;
   }
 
   bool _isAuthOrForbiddenStatus(int? statusCode) {
@@ -56,7 +75,10 @@ class NotificationApi {
     _adminAccessBlocked = false;
   }
 
-  void _blockAdminAccessIfNeeded(NotificationAudience audience, int? statusCode) {
+  void _blockAdminAccessIfNeeded(
+    NotificationAudience audience,
+    int? statusCode,
+  ) {
     if (audience != NotificationAudience.admin) {
       return;
     }
@@ -93,21 +115,28 @@ class NotificationApi {
       return NotificationsPage.empty(page: page, perPage: perPage);
     }
 
-    // Add device_id if available for customer audience.
+    // Customer audience: choose exactly one identity source.
     if (audience == NotificationAudience.customer) {
-      final deviceId = _deviceIdOrNull;
-      if (deviceId != null) {
-        queryParams['device_id'] = deviceId;
+      if (!_useCustomerAuth) {
+        final deviceId = await _getDeviceId();
+        if (deviceId != null) {
+          queryParams['device_id'] = deviceId;
+        } else {
+          AppLogger.warn('Skipping notification fetch: No Device ID for guest');
+          return NotificationsPage.empty(page: page, perPage: perPage);
+        }
       } else if (!_canTryCustomer) {
-        AppLogger.warn('Skipping notification fetch: No Auth & No Device ID');
+        AppLogger.warn(
+          'Skipping notification fetch: Requires Auth but no token',
+        );
         return NotificationsPage.empty(page: page, perPage: perPage);
       }
     }
 
-    // Web dev origins can fail CORS preflight on Authorization headers.
-    // Keep admin protected, but avoid forced auth headers for customer audience on web.
-    final requiresAuth = audience == NotificationAudience.admin ||
-        (!kIsWeb && _session.isLoggedIn);
+    // Keep admin protected, and use auth for logged-in customer on non-web.
+    final requiresAuth =
+        audience == NotificationAudience.admin ||
+        (audience == NotificationAudience.customer && _useCustomerAuth);
 
     if (requiresAuth && !_session.hasStoredToken) {
       AppLogger.warn('Skipping notification fetch: Requires Auth but no token');
@@ -158,21 +187,28 @@ class NotificationApi {
       return 0;
     }
 
-    // Add device_id if available for customer audience.
+    // Customer audience: choose exactly one identity source.
     if (audience == NotificationAudience.customer) {
-      final deviceId = _deviceIdOrNull;
-      if (deviceId != null) {
-        queryParams['device_id'] = deviceId;
+      if (!_useCustomerAuth) {
+        final deviceId = await _getDeviceId();
+        if (deviceId != null) {
+          queryParams['device_id'] = deviceId;
+        } else {
+          AppLogger.warn('Skipping unread-count fetch: No Device ID for guest');
+          return 0;
+        }
       } else if (!_canTryCustomer) {
-        AppLogger.warn('Skipping unread-count fetch: No Auth & No Device ID');
+        AppLogger.warn(
+          'Skipping unread-count fetch: Requires Auth but no token',
+        );
         return 0;
       }
     }
 
-    // Web dev origins can fail CORS preflight on Authorization headers.
-    // Keep admin protected, but avoid forced auth headers for customer audience on web.
-    final requiresAuth = audience == NotificationAudience.admin ||
-        (!kIsWeb && _session.isLoggedIn);
+    // Keep admin protected, and use auth for logged-in customer on non-web.
+    final requiresAuth =
+        audience == NotificationAudience.admin ||
+        (audience == NotificationAudience.customer && _useCustomerAuth);
 
     if (requiresAuth && !_session.hasStoredToken) {
       AppLogger.warn('Skipping unread-count fetch: Requires Auth but no token');
@@ -195,8 +231,12 @@ class NotificationApi {
         return 0;
       }
 
-      final data = extractMap(response.data)['data'] as Map<String, dynamic>?;
-      return data?['unread_count'] as int? ?? 0;
+      final payload = extractMap(response.data);
+      final unreadRaw =
+          payload['unread_count'] ??
+          extractMap(payload['data'])['unread_count'];
+      final unreadCount = parseInt(unreadRaw);
+      return unreadCount < 0 ? 0 : unreadCount;
     } on DioException catch (e) {
       if (_isAuthOrForbiddenStatus(e.response?.statusCode)) {
         _blockAdminAccessIfNeeded(audience, e.response?.statusCode);
@@ -214,25 +254,37 @@ class NotificationApi {
   }) async {
     final body = <String, dynamic>{'ids': ids, 'audience': audience.value};
 
-    // Add device_id if available
-    if (audience == NotificationAudience.customer) {
-      final deviceId = _deviceIdValue.valueOrNull;
-      if (deviceId != null) {
-        body['device_id'] = deviceId;
+    final requiresAuth =
+        audience == NotificationAudience.admin ||
+        (audience == NotificationAudience.customer && _useCustomerAuth);
+
+    if (audience == NotificationAudience.customer && !_useCustomerAuth) {
+      final deviceId = await _getDeviceId();
+      if (deviceId == null) {
+        AppLogger.warn('Skipping mark-read: No Device ID for guest');
+        return 0;
       }
+      body['device_id'] = deviceId;
+    }
+
+    if (requiresAuth && !_session.hasStoredToken) {
+      AppLogger.warn('Skipping mark-read: Requires Auth but no token');
+      return 0;
     }
 
     final response = await _client.post(
       Endpoints.notificationsMarkRead(),
       data: body,
-      options: Options(
-        extra: {'requiresAuth': audience == NotificationAudience.admin},
-      ),
+      options: Options(extra: {'requiresAuth': requiresAuth}),
       cancelToken: cancelToken,
     );
 
-    final data = extractMap(response.data)['data'] as Map<String, dynamic>?;
-    return data?['updated_count'] as int? ?? 0;
+    final payload = extractMap(response.data);
+    final updatedRaw =
+        payload['updated_count'] ??
+        extractMap(payload['data'])['updated_count'];
+    final updatedCount = parseInt(updatedRaw);
+    return updatedCount < 0 ? 0 : updatedCount;
   }
 
   /// Mark all notifications as read
@@ -240,27 +292,38 @@ class NotificationApi {
     required NotificationAudience audience,
     CancelToken? cancelToken,
   }) async {
-    final queryParams = <String, dynamic>{'audience': audience.value};
+    final body = <String, dynamic>{'audience': audience.value};
+    final requiresAuth =
+        audience == NotificationAudience.admin ||
+        (audience == NotificationAudience.customer && _useCustomerAuth);
 
-    // Add device_id if available
-    if (audience == NotificationAudience.customer) {
-      final deviceId = _deviceIdValue.valueOrNull;
-      if (deviceId != null) {
-        queryParams['device_id'] = deviceId;
+    if (audience == NotificationAudience.customer && !_useCustomerAuth) {
+      final deviceId = await _getDeviceId();
+      if (deviceId == null) {
+        AppLogger.warn('Skipping mark-all-read: No Device ID for guest');
+        return 0;
       }
+      body['device_id'] = deviceId;
+    }
+
+    if (requiresAuth && !_session.hasStoredToken) {
+      AppLogger.warn('Skipping mark-all-read: Requires Auth but no token');
+      return 0;
     }
 
     final response = await _client.post(
       Endpoints.notificationsMarkAllRead(),
-      queryParameters: queryParams,
-      options: Options(
-        extra: {'requiresAuth': audience == NotificationAudience.admin},
-      ),
+      data: body,
+      options: Options(extra: {'requiresAuth': requiresAuth}),
       cancelToken: cancelToken,
     );
 
-    final data = extractMap(response.data)['data'] as Map<String, dynamic>?;
-    return data?['updated_count'] as int? ?? 0;
+    final payload = extractMap(response.data);
+    final updatedRaw =
+        payload['updated_count'] ??
+        extractMap(payload['data'])['updated_count'];
+    final updatedCount = parseInt(updatedRaw);
+    return updatedCount < 0 ? 0 : updatedCount;
   }
 
   /// Admin: Approve or reject order

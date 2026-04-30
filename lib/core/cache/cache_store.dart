@@ -76,6 +76,22 @@ class CacheStore {
     await _box!.delete(key);
   }
 
+  Future<void> deleteByPrefix(String prefix) async {
+    await init();
+    final normalizedPrefix = prefix.trim();
+    if (normalizedPrefix.isEmpty) {
+      return;
+    }
+
+    final keys = _box!.keys
+        .where((key) => key.toString().startsWith(normalizedPrefix))
+        .toList(growable: false);
+    if (keys.isEmpty) {
+      return;
+    }
+    await _box!.deleteAll(keys);
+  }
+
   Future<void> clear() async {
     await init();
     await _box!.clear();

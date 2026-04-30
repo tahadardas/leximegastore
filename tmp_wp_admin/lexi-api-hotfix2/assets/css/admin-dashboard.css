@@ -1,0 +1,295 @@
+:root {
+    --lexi-primary: #FFBF00;
+    --lexi-brand: #FFBF00;
+    --lexi-black: #000000;
+    --lexi-dark-grey: #121212;
+    --lexi-medium-grey: #1e1e1e;
+    --lexi-glass: rgba(255, 255, 255, 0.05);
+    --lexi-glass-border: rgba(255, 255, 255, 0.1);
+    --lexi-success: #4caf50;
+    --lexi-error: #f44336;
+    --lexi-warning: #ffb300;
+    --lexi-info: #2196f3;
+}
+
+.lexi-dashboard-wrapper {
+    background-color: var(--lexi-black);
+    color: #ffffff;
+    padding: 30px;
+    min-height: calc(100vh - 32px);
+    font-family: 'Inter', -apple-system, sans-serif;
+    margin-right: -20px;
+    /* Offset WP admin padding */
+    direction: rtl;
+}
+
+.lexi-header {
+    margin-bottom: 40px;
+}
+
+.lexi-header h1 {
+    color: var(--lexi-brand);
+    font-size: 32px;
+    font-weight: 800;
+    margin: 0 0 10px 0;
+}
+
+.lexi-header p {
+    color: #888;
+    font-size: 16px;
+    margin: 0;
+}
+
+/* Base Card Style */
+.lexi-card {
+    background: var(--lexi-glass);
+    border: 1px solid var(--lexi-glass-border);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lexi-card:hover {
+    border-color: rgba(255, 191, 0, 0.3);
+    transform: translateY(-2px);
+}
+
+/* Hero Card */
+.lexi-hero-card {
+    background: linear-gradient(135deg, rgba(255, 191, 0, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
+    border-color: rgba(255, 191, 0, 0.2);
+    margin-bottom: 30px;
+}
+
+.kpi-label {
+    font-size: 14px;
+    color: #888;
+    font-weight: 500;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kpi-value {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -1px;
+}
+
+/* KPI Grid */
+.lexi-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+}
+
+.lexi-section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 40px 0 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.lexi-section-title .dashicons {
+    color: var(--lexi-brand);
+}
+
+/* Action Items */
+.lexi-action-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 15px;
+}
+
+.lexi-action-item {
+    background: var(--lexi-glass);
+    border: 1px solid var(--lexi-glass-border);
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.lexi-action-item:hover {
+    background: var(--lexi-medium-grey);
+    border-color: var(--lexi-glass-border);
+}
+
+.lexi-action-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--lexi-primary);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+    font-size: 24px;
+}
+
+.lexi-action-info {
+    flex: 1;
+}
+
+.lexi-action-info .action-title {
+    font-weight: 600;
+    font-size: 16px;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.lexi-action-info .action-subtitle {
+    font-size: 13px;
+    color: #888;
+}
+
+/* Modals / Forms */
+.lexi-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+}
+
+.lexi-modal {
+    background: #1a1a1a;
+    border: 1px solid var(--lexi-glass-border);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 700px;
+    max-height: 90vh;
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.lexi-modal-header {
+    padding: 24px;
+    border-bottom: 1px solid var(--lexi-glass-border);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.lexi-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.lexi-modal-table {
+    background: transparent !important;
+    color: #fff !important;
+    border: none !important;
+}
+
+.lexi-modal-table th {
+    color: #888 !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    font-weight: 600 !important;
+    padding: 12px 15px !important;
+}
+
+.lexi-modal-table td {
+    border-bottom: 1px solid var(--lexi-glass-border) !important;
+    vertical-align: middle !important;
+    padding: 12px 15px !important;
+}
+
+.button-small.lexi-btn-delete {
+    background: var(--lexi-error) !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+.button-small.lexi-btn-success {
+    background: var(--lexi-success) !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+.lexi-loading {
+    padding: 40px;
+    text-align: center;
+    color: var(--lexi-brand);
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* Forms in Modal */
+.lexi-form {
+    padding: 10px 0;
+}
+
+.lexi-field {
+    margin-bottom: 20px;
+}
+
+.lexi-field label {
+    display: block;
+    margin-bottom: 8px;
+    color: #888;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.lexi-field input[type="text"],
+.lexi-field select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--lexi-glass-border);
+    border-radius: 8px;
+    padding: 10px 15px;
+    color: #fff !important;
+    width: 100%;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.lexi-field input[type="text"]:focus,
+.lexi-field select:focus {
+    border-color: var(--lexi-brand);
+    background: rgba(255, 255, 255, 0.1);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 191, 0, 0.2);
+}
+
+.lexi-field input[type="checkbox"] {
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.lexi-dashboard-wrapper>* {
+    animation: fadeIn 0.4s ease-out forwards;
+}

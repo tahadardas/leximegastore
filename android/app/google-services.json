@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "494798171237",
-    "project_id": "leximegastore-25c4d",
-    "storage_bucket": "leximegastore-25c4d.firebasestorage.app"
+    "project_number": "753453474251",
+    "project_id": "leximeganew",
+    "storage_bucket": "leximeganew.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:494798171237:android:f7216713a68695ea6a2a8c",
+        "mobilesdk_app_id": "1:753453474251:android:f09b9c34135e68dff4d64e",
         "android_client_info": {
-          "package_name": "com.leximegastore.app"
+          "package_name": "com.taha.leximega"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCl4c8cnmz77S5GrCgIYK2_Fiwc7218kNM"
+          "current_key": "AIzaSyBgs3tWbmNBz6t21SVKXFvt19565wtFVSM"
         }
       ],
       "services": {

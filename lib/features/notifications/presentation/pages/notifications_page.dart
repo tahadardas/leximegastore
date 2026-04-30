@@ -1,10 +1,11 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/notifications/firebase_push_service.dart';
 import '../../../../core/session/app_session.dart';
 import '../../../../design_system/lexi_tokens.dart';
 import '../../data/notification_repository.dart';
@@ -24,6 +25,16 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage>
     with SingleTickerProviderStateMixin {
   TabController? _tabController;
   bool _isAdmin = false;
+  bool _didPromptNotificationPermission = false;
+  bool _isMarkingAllRead = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeRequestNotificationPermission());
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -66,9 +77,9 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage>
       ),
       actions: [
         TextButton(
-          onPressed: _markAllAsRead,
+          onPressed: _isMarkingAllRead ? null : _markAllAsRead,
           child: Text(
-            'تعليم الكل كمقروء',
+            _isMarkingAllRead ? 'جاري التحديث...' : 'تعليم الكل كمقروء',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: LexiColors.brandPrimary),
@@ -104,12 +115,70 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage>
     return const _CustomerNotificationsTab();
   }
 
-  void _markAllAsRead() {
+  Future<void> _maybeRequestNotificationPermission() async {
+    if (_didPromptNotificationPermission || !mounted) {
+      return;
+    }
+    _didPromptNotificationPermission = true;
+
+    final pushService = ref.read(firebasePushServiceProvider);
+    final alreadyAuthorized = await pushService.areNotificationsAuthorized();
+    if (alreadyAuthorized || !mounted) {
+      return;
+    }
+
+    final shouldRequest = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('تفعيل الإشعارات'),
+          content: const Text(
+            'نستخدم الإشعارات لإرسال تحديثات الطلبات وحالة التوصيل بشكل فوري.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('لاحقاً'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('متابعة'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldRequest != true || !mounted) {
+      return;
+    }
+    await pushService.requestNotificationsPermissionFromUser();
+  }
+
+  Future<void> _markAllAsRead() async {
+    if (_isMarkingAllRead) {
+      return;
+    }
+    setState(() {
+      _isMarkingAllRead = true;
+    });
+
     final service = ref.read(notificationsRealtimeServiceProvider);
-    if (_isAdmin && _tabController?.index == 1) {
-      unawaited(service.markAllAdminRead());
-    } else {
-      unawaited(service.markAllCustomerRead());
+    try {
+      if (_isAdmin) {
+        await Future.wait([
+          service.markAllCustomerRead(),
+          service.markAllAdminRead(),
+        ]);
+      } else {
+        await service.markAllCustomerRead();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarkingAllRead = false;
+        });
+      }
     }
   }
 }
@@ -120,13 +189,37 @@ class _CustomerNotificationsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncSnapshot = ref.watch(notificationsStreamProvider);
+    final cachedSnapshot = ref
+        .read(notificationsRealtimeServiceProvider)
+        .snapshot;
+
+    // Force prime the service when entering the tab
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(notificationsRealtimeServiceProvider).prime();
+    });
 
     return RefreshIndicator(
       onRefresh: () => ref
           .read(notificationsRealtimeServiceProvider)
           .refreshNow(soft: false),
       child: asyncSnapshot.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () {
+          if (cachedSnapshot.customerItems.isNotEmpty) {
+            return _NotificationsList(
+              items: cachedSnapshot.customerItems,
+              isStale: true,
+              onTap: (item) {
+                unawaited(
+                  ref
+                      .read(notificationsRealtimeServiceProvider)
+                      .markCustomerRead(item.id),
+                );
+                _openNotificationAction(context, item, isAdmin: false);
+              },
+            );
+          }
+          return const Center(child: CircularProgressIndicator());
+        },
         error: (error, _) => _ErrorBody(
           message: 'تعذر تحميل الإشعارات.',
           onRetry: () => ref
@@ -156,13 +249,57 @@ class _AdminNotificationsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncSnapshot = ref.watch(notificationsStreamProvider);
+    final cachedSnapshot = ref
+        .read(notificationsRealtimeServiceProvider)
+        .snapshot;
 
     return RefreshIndicator(
       onRefresh: () => ref
           .read(notificationsRealtimeServiceProvider)
           .refreshNow(soft: false),
       child: asyncSnapshot.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () {
+          if (cachedSnapshot.adminItems.isNotEmpty) {
+            return _AdminNotificationsList(
+              items: cachedSnapshot.adminItems,
+              isStale: true,
+              onTap: (item) {
+                unawaited(
+                  ref
+                      .read(notificationsRealtimeServiceProvider)
+                      .markAdminRead(item.id),
+                );
+                _openNotificationAction(context, item, isAdmin: true);
+              },
+              onDecision: (item, decision, note) async {
+                if (item.orderId == null) {
+                  return;
+                }
+
+                final result = await ref
+                    .read(notificationRepositoryProvider)
+                    .adminOrderDecision(
+                      orderId: item.orderId!,
+                      decision: decision,
+                      note: note,
+                    );
+
+                if (!context.mounted) {
+                  return;
+                }
+
+                if (result['success'] == true) {
+                  unawaited(
+                    ref
+                        .read(notificationsRealtimeServiceProvider)
+                        .refreshNow(soft: false),
+                  );
+                }
+              },
+            );
+          }
+          return const Center(child: CircularProgressIndicator());
+        },
         error: (error, _) => _ErrorBody(
           message: 'تعذر تحميل الإشعارات.',
           onRetry: () => ref

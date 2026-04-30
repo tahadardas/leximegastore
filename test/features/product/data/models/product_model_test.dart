@@ -14,6 +14,7 @@ void main() {
         'rating_count': 12,
         'stock_status': 'instock',
         'in_stock': true,
+        'category_ids': [10, '11'],
         'images': [
           {
             'thumb': 'https://example.com/image-300x300.jpg',
@@ -31,6 +32,7 @@ void main() {
       expect(model.rating, 4.6);
       expect(model.reviewsCount, 12);
       expect(model.inStock, isTrue);
+      expect(model.categoryIds, <int>[10, 11]);
       expect(model.images, isNotEmpty);
       expect(model.cardImages, isNotEmpty);
       expect(model.image.thumb, contains('300x300'));
@@ -89,6 +91,64 @@ void main() {
       expect(model.image.large, isNotNull);
       expect(model.cardImages.first, contains('original.jpg'));
       expect(model.images.first, contains('original.jpg'));
+    });
+
+    test('parses legacy AI recommendation image_url payload', () {
+      final model = ProductModel.fromJson({
+        'id': 12,
+        'name': 'AI Product',
+        'price': 650,
+        'regular_price': 650,
+        'image_url': 'https://example.com/ai-product.jpg',
+      });
+
+      expect(model.image.thumb, contains('ai-product.jpg'));
+      expect(model.image.medium, contains('ai-product.jpg'));
+      expect(model.image.large, contains('ai-product.jpg'));
+      expect(model.cardImages, contains('https://example.com/ai-product.jpg'));
+      expect(model.images, contains('https://example.com/ai-product.jpg'));
+    });
+
+    test('parses WooCommerce Store API products with minor-unit prices', () {
+      final model = ProductModel.fromJson({
+        'id': 29352,
+        'name': 'كرت أقلام تأشير نيون',
+        'type': 'simple',
+        'prices': {
+          'price': '31000',
+          'regular_price': '31000',
+          'sale_price': '31000',
+          'currency_minor_unit': 2,
+        },
+        'average_rating': '4.5',
+        'review_count': 7,
+        'is_in_stock': true,
+        'images': [
+          {
+            'src': 'https://example.com/product.jpg',
+            'thumbnail': 'https://example.com/product-300x300.jpg',
+          },
+        ],
+        'categories': [
+          {'id': 795, 'name': 'أقلام تأشير', 'slug': 'highlighters'},
+        ],
+        'brands': [
+          {'id': 545, 'name': 'زيرو مس', 'slug': 'zero-miss'},
+        ],
+      });
+
+      expect(model.id, 29352);
+      expect(model.price, 310);
+      expect(model.regularPrice, 310);
+      expect(model.salePrice, isNull);
+      expect(model.rating, 4.5);
+      expect(model.reviewsCount, 7);
+      expect(model.inStock, isTrue);
+      expect(model.categoryIds, <int>[795]);
+      expect(model.brandId, 545);
+      expect(model.brandName, 'زيرو مس');
+      expect(model.image.thumb, contains('300x300'));
+      expect(model.image.large, contains('product.jpg'));
     });
   });
 }

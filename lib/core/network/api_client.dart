@@ -22,11 +22,13 @@ class ApiClient {
     required RequestQueue requestQueue,
     required RetryPolicy retryPolicy,
   }) : dio = Dio(
-         BaseOptions(
+       BaseOptions(
            baseUrl: Endpoints.baseUrl,
-           connectTimeout: const Duration(seconds: 20),
-           receiveTimeout: const Duration(seconds: 20),
-           sendTimeout: kIsWeb ? null : const Duration(seconds: 20),
+           // Fail faster on dead connections while still allowing slower
+           // catalog payloads to complete.
+           connectTimeout: const Duration(seconds: 12),
+           receiveTimeout: const Duration(seconds: 25),
+           sendTimeout: kIsWeb ? null : const Duration(seconds: 15),
            validateStatus: (status) =>
                status != null && status >= 200 && status < 300,
            headers: {'Accept': 'application/json'},

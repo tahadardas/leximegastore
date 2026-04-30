@@ -1,4 +1,5 @@
 import '../../../../core/utils/safe_parsers.dart';
+import '../../../../core/utils/text_normalizer.dart';
 import '../../../../core/utils/url_utils.dart';
 
 class ProductVariationOption {
@@ -23,9 +24,21 @@ class ProductVariationOption {
   });
 
   factory ProductVariationOption.fromJson(Map<String, dynamic> json) {
-    final rawPrice = parseDouble(json['price']);
-    final rawRegular = parseDouble(json['regular_price']);
-    final rawSale = _nullableDouble(json['sale_price']);
+    final storePrices = json['prices'] is Map
+        ? Map<String, dynamic>.from(json['prices'] as Map)
+        : const <String, dynamic>{};
+    final rawPrice = parseDouble(
+      json['price'] ?? _storeApiPrice(storePrices, 'price'),
+    );
+    final rawRegular = parseDouble(
+      json['regular_price'] ?? _storeApiPrice(storePrices, 'regular_price'),
+    );
+    final rawSale = _nullableDouble(
+      json['sale_price'] ?? _storeApiPrice(storePrices, 'sale_price'),
+    );
+    final stockStatus = TextNormalizer.normalize(
+      json['stock_status'] ?? json['status'],
+    ).toLowerCase();
 
     final salePrice = (rawSale != null && rawSale > 0) ? rawSale : null;
     var regularPrice = rawRegular > 0 ? rawRegular : 0.0;
@@ -47,9 +60,13 @@ class ProductVariationOption {
       price: price,
       regularPrice: regularPrice,
       salePrice: salePrice,
-      inStock: parseBool(json['in_stock']),
-      imageUrl: normalizeNullableHttpUrl(
-        (json['image_url'] ?? json['image'] ?? '').toString().trim(),
+      inStock:
+          parseBool(json['in_stock'] ?? json['is_in_stock']) ||
+          stockStatus == 'instock' ||
+          stockStatus == 'in_stock' ||
+          stockStatus == 'available',
+      imageUrl: _extractVariationImageUrl(
+        json['image_url'] ?? json['image'] ?? json['image_data'],
       ),
     );
   }
@@ -103,4 +120,74 @@ double? _nullableDouble(dynamic raw) {
   }
   final parsed = parseDouble(raw);
   return parsed > 0 ? parsed : null;
+}
+
+double? _storeApiPrice(Map<String, dynamic> prices, String key) {
+  if (prices.isEmpty || !prices.containsKey(key)) {
+    return null;
+  }
+
+  final parsed = parseDouble(prices[key]);
+  if (parsed <= 0) {
+    return null;
+  }
+
+  final minorUnit = parseInt(prices['currency_minor_unit']);
+  if (minorUnit <= 0) {
+    return parsed;
+  }
+
+  var divisor = 1.0;
+  for (var i = 0; i < minorUnit; i++) {
+    divisor *= 10;
+  }
+  return parsed / divisor;
+}
+
+String? _extractVariationImageUrl(dynamic raw) {
+  if (raw == null) {
+    return null;
+  }
+
+  if (raw is String) {
+    return normalizeNullableHttpUrl(raw);
+  }
+
+  if (raw is List) {
+    for (final item in raw) {
+      final candidate = _extractVariationImageUrl(item);
+      if ((candidate ?? '').isNotEmpty) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  if (raw is Map) {
+    final map = Map<String, dynamic>.from(raw);
+    for (final key in const [
+      'src',
+      'url',
+      'image_url',
+      'thumbnail',
+      'thumb',
+      'medium',
+      'large',
+      'full',
+    ]) {
+      final candidate = normalizeNullableHttpUrl(map[key]?.toString());
+      if ((candidate ?? '').isNotEmpty) {
+        return candidate;
+      }
+    }
+
+    for (final key in const ['sizes', 'image', 'images']) {
+      final nested = _extractVariationImageUrl(map[key]);
+      if ((nested ?? '').isNotEmpty) {
+        return nested;
+      }
+    }
+  }
+
+  return normalizeNullableHttpUrl(raw.toString());
 }

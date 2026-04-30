@@ -95,10 +95,7 @@ class WishlistPage extends ConsumerWidget {
                   oldPrice: product.hasDiscount
                       ? CurrencyFormatter.formatAmount(product.regularPrice)
                       : null,
-                  imageUrl:
-                      product.image.cardUrl ??
-                      product.primaryImageUrl ??
-                      product.primaryImage,
+                  imageUrls: product.effectiveCardImages,
                   rating: product.rating,
                   reviewsCount: product.reviewsCount,
                   brandName: product.brandName,

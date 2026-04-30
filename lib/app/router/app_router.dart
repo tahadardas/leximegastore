@@ -103,6 +103,11 @@ class _RouteBackGuard extends StatelessWidget {
           router.pop();
           return;
         }
+        final navigator = Navigator.maybeOf(context);
+        if (navigator != null && navigator.canPop()) {
+          navigator.pop();
+          return;
+        }
         context.goNamedSafe(fallbackRouteName);
       },
       child: child,
@@ -259,38 +264,56 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             name: AppRouteNames.home,
             path: AppRoutePaths.home,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const HomePage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const HomePage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
           GoRoute(
             name: AppRouteNames.cart,
             path: AppRoutePaths.cart,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const CartPage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const CartPage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
           GoRoute(
             name: AppRouteNames.deals,
             path: AppRoutePaths.deals,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const DealsPage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const DealsPage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
           GoRoute(
             name: AppRouteNames.profile,
             path: AppRoutePaths.profile,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const AccountRootPage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const AccountRootPage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
           GoRoute(
             name: AppRouteNames.categories,
             path: AppRoutePaths.categories,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const CategoriesPage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const CategoriesPage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
           GoRoute(
             name: AppRouteNames.wishlist,
             path: AppRoutePaths.wishlist,
-            pageBuilder: (context, state) =>
-                _fadeSlidePage(state, const WishlistPage()),
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const WishlistPage(),
+              fallbackRouteName: AppRouteNames.home,
+            ),
           ),
         ],
       ),
@@ -687,7 +710,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: AppRouteNames.orderInvoice,
         path: AppRoutePaths.orderInvoiceTemplate,
         pageBuilder: (context, state) {
-          final type = state.uri.queryParameters['type'] ?? 'final';
+          final type = state.uri.queryParameters['type'] ?? 'provisional';
           final routePhone = (state.uri.queryParameters['phone'] ?? '').trim();
           final sessionPhone = (session.phone ?? '').trim();
           final phone = routePhone.isNotEmpty
@@ -710,11 +733,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         name: AppRouteNames.orderSuccess,
         path: AppRoutePaths.orderSuccessTemplate,
-        pageBuilder: (context, state) => _fadeSlidePage(
-          state,
-          OrderSuccessPage(orderId: state.pathParameters['id']!),
-          fallbackRouteName: AppRouteNames.home,
-        ),
+        pageBuilder: (context, state) {
+          final routePhone = (state.uri.queryParameters['phone'] ?? '').trim();
+          final sessionPhone = (session.phone ?? '').trim();
+          final phone = routePhone.isNotEmpty
+              ? routePhone
+              : (sessionPhone.isNotEmpty ? sessionPhone : null);
+          return _fadeSlidePage(
+            state,
+            OrderSuccessPage(
+              orderId: state.pathParameters['id']!,
+              phone: phone,
+            ),
+            fallbackRouteName: AppRouteNames.home,
+          );
+        },
       ),
       GoRoute(
         name: AppRouteNames.orderStatus,

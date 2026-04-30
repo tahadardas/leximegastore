@@ -16,7 +16,7 @@ final getShippingRateUseCaseProvider = Provider<GetShippingRate>((ref) {
 // ?"??"? State ?"??"?
 
 /// Fetches list of available cities
-final citiesProvider = FutureProvider.autoDispose<List<City>>((ref) {
+final citiesProvider = FutureProvider<List<City>>((ref) {
   return ref.watch(getCitiesUseCaseProvider).call();
 });
 

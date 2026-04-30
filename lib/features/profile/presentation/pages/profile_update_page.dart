@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/errors/app_failure.dart';
 import '../../../../core/services/location_address_service.dart';
+import '../../../../core/services/location_permission_rationale.dart';
 import '../../../../core/session/app_session.dart';
 import '../../../../design_system/lexi_tokens.dart';
 import '../../../../design_system/lexi_typography.dart';
@@ -341,6 +342,11 @@ class _ProfileUpdatePageState extends ConsumerState<ProfileUpdatePage> {
   }
 
   Future<void> _fillAddressFromLocation() async {
+    final approved = await showLocationPermissionRationaleDialog(context);
+    if (!approved) {
+      return;
+    }
+
     setState(() => _isResolvingLocation = true);
     try {
       final result = await LocationAddressService.getCurrentAddress();

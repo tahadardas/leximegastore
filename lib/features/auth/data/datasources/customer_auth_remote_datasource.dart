@@ -55,6 +55,7 @@ class CustomerAuthRemoteDatasourceImpl implements CustomerAuthRemoteDatasource {
   static const _lexiProfileUpdateRoute = '/lexi/v1/profile/update';
   static const _lexiLegacyProfileRoute = '/lexi/v1/auth/profile';
   static const _lexiAvatarRoute = '/lexi/v1/profile/avatar';
+  static const _wpUsersMeRoute = '/wp/v2/users/me';
 
   static String _restRoutePath(String route) => '/index.php?rest_route=$route';
 
@@ -72,8 +73,9 @@ class CustomerAuthRemoteDatasourceImpl implements CustomerAuthRemoteDatasource {
       );
 
       final map = extractMap(response.data);
-      final token =
-          (map['access_token'] ?? map['token'] ?? '').toString().trim();
+      final token = (map['access_token'] ?? map['token'] ?? '')
+          .toString()
+          .trim();
       if (token.isEmpty) {
         throw const FormatException('فشل تسجيل الدخول: لم يتم استلام التوكن.');
       }
@@ -122,6 +124,8 @@ class CustomerAuthRemoteDatasourceImpl implements CustomerAuthRemoteDatasource {
     final response = await _getWithFallback([
       _restRoutePath(_lexiAuthMeRoute),
       Endpoints.customerAuthMe(),
+      '/index.php?rest_route=$_wpUsersMeRoute&context=edit',
+      '/wp-json$_wpUsersMeRoute?context=edit',
     ]);
     return CustomerUser.fromJson(_extractUserMap(response.data));
   }
@@ -249,12 +253,80 @@ class CustomerAuthRemoteDatasourceImpl implements CustomerAuthRemoteDatasource {
     final map = extractMap(raw);
     final user = map['user'];
     if (user is Map<String, dynamic>) {
-      return user;
+      return _normalizeUserMap(user);
     }
     if (user is Map) {
-      return user.map((key, value) => MapEntry(key.toString(), value));
+      return _normalizeUserMap(
+        user.map((key, value) => MapEntry(key.toString(), value)),
+      );
     }
-    return map;
+    return _normalizeUserMap(map);
+  }
+
+  Map<String, dynamic> _normalizeUserMap(Map<String, dynamic> raw) {
+    final rolesRaw = raw['roles'];
+    final roles = <String>[];
+    if (rolesRaw is List) {
+      for (final entry in rolesRaw) {
+        final value = entry.toString().trim();
+        if (value.isNotEmpty) {
+          roles.add(value);
+        }
+      }
+    } else if (rolesRaw is String) {
+      final value = rolesRaw.trim();
+      if (value.isNotEmpty) {
+        roles.add(value);
+      }
+    } else if (rolesRaw is Map) {
+      for (final entry in rolesRaw.entries) {
+        final allowed = entry.value == true || entry.value == 1;
+        if (!allowed) {
+          continue;
+        }
+        final value = entry.key.toString().trim();
+        if (value.isNotEmpty) {
+          roles.add(value);
+        }
+      }
+    }
+
+    final roleField = (raw['role'] ?? raw['user_role'] ?? '').toString().trim();
+    if (roleField.isNotEmpty && !roles.contains(roleField)) {
+      roles.add(roleField);
+    }
+
+    String avatarUrl = (raw['avatar_url'] ?? '').toString().trim();
+    if (avatarUrl.isEmpty && raw['avatar_urls'] is Map) {
+      final avatarMap = (raw['avatar_urls'] as Map).map(
+        (key, value) => MapEntry('$key', value),
+      );
+      final preferred =
+          avatarMap['96'] ?? avatarMap['48'] ?? avatarMap['24'] ?? '';
+      avatarUrl = preferred.toString().trim();
+    }
+
+    final username =
+        (raw['user_login'] ??
+                raw['username'] ??
+                raw['slug'] ??
+                raw['user_nicename'] ??
+                '')
+            .toString()
+            .trim();
+    final displayName = (raw['display_name'] ?? raw['name'] ?? username)
+        .toString()
+        .trim();
+
+    return <String, dynamic>{
+      ...raw,
+      'user_login': username,
+      'username': username,
+      'role': roleField,
+      'display_name': displayName,
+      'roles': roles,
+      'avatar_url': avatarUrl,
+    };
   }
 
   Future<Response<dynamic>> _getWithFallback(List<String> paths) async {

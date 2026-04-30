@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../shared/ui/lexi_alert.dart';
 import '../../../../../ui/widgets/lexi_safe_bottom.dart' show LexiSafeBottom;
 import '../../domain/entities/admin_home_section.dart';
+import '../../domain/entities/admin_merch_category.dart';
 import '../controllers/admin_home_sections_controller.dart';
 import '../controllers/admin_merch_categories_controller.dart';
 
@@ -287,7 +288,7 @@ const _kHomeSectionTypes = <String, String>{
 };
 
 class _AddSectionSheetContent extends StatefulWidget {
-  final List<dynamic> categories;
+  final List<AdminMerchCategory> categories;
   const _AddSectionSheetContent({required this.categories});
 
   @override
@@ -372,8 +373,8 @@ class _AddSectionSheetContentState extends State<_AddSectionSheetContent> {
                     items: widget.categories
                         .map(
                           (item) => DropdownMenuItem<int>(
-                            value: item.id as int,
-                            child: Text(item.name as String),
+                            value: item.id,
+                            child: Text(item.hierarchyLabel),
                           ),
                         )
                         .toList(),
@@ -453,4 +454,3 @@ class _AddSectionSheetContentState extends State<_AddSectionSheetContent> {
     );
   }
 }
-

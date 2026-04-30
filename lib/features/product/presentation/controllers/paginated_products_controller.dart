@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/entities/product_entity.dart';
 import '../../domain/repositories/product_repository.dart';
+import '../../domain/services/home_product_ranking_service.dart';
 import 'products_controller.dart';
 
 @immutable
@@ -134,6 +135,20 @@ class PaginatedProductsController
           PaginatedProductsQuery
         > {
   final Map<int, List<ProductEntity>> _pages = <int, List<ProductEntity>>{};
+  final HomeProductRankingService _homeRankingService =
+      const HomeProductRankingService();
+  static const HomeProductRankingOptions _homeRankingOptions =
+      HomeProductRankingOptions(
+        newestPinnedCount: 0,
+        maxSameBrandConsecutive: 1,
+        maxSameCategoryConsecutive: 1,
+        randomJitter: 0.0,
+      );
+  static const int _homeInitialPrefetchPages = 2;
+  static const int _homeInitialMinBrandBuckets = 2;
+  static const int _homeDiversityFallbackPages = 1;
+  static const String _homeDiversityFallbackSort = 'top_rated';
+  int _homeRankingSeed = 0;
   int _activeRequestId = 0;
 
   ProductRepository get _repository => ref.read(productRepositoryProvider);
@@ -156,8 +171,12 @@ class PaginatedProductsController
       return;
     }
 
-    _pages.clear();
     final requestId = ++_activeRequestId;
+    if (_shouldApplyHomeRanking) {
+      _homeRankingSeed = _nextRankingSeed();
+    }
+
+    _pages.clear();
     state = state.copyWith(
       isLoadingInitial: true,
       isLoadingNext: false,
@@ -182,19 +201,95 @@ class PaginatedProductsController
       final uniqueItems = _dedupeProducts(result.products);
       _pages[1] = uniqueItems;
 
+      var mergedItems = uniqueItems;
+      var lastResult = result;
+      var lastPage = uniqueItems.isEmpty ? 0 : 1;
+      var lastPageItemsCount = uniqueItems.length;
+
+      // Home feed: prefetch a small initial pool so brand/category diversity
+      // can be applied to "All products" from the first render.
+      if (_shouldApplyHomeRanking &&
+          uniqueItems.isNotEmpty &&
+          _countDistinctBrandBuckets(mergedItems) < _homeInitialMinBrandBuckets) {
+        final maxPrefetchPage = _resolveHomeInitialPrefetchMaxPage(
+          totalPages: result.totalPages,
+        );
+        for (var page = 2; page <= maxPrefetchPage; page++) {
+          final hasMoreBeforePrefetch = _resolveHasMore(
+            result: lastResult,
+            page: lastPage <= 0 ? 1 : lastPage,
+            pageItemsCount: lastPageItemsCount,
+            loadedItemsCount: mergedItems.length,
+          );
+          if (!hasMoreBeforePrefetch) {
+            break;
+          }
+
+          try {
+            final prefetched = await _fetchPage(page: page, preferCache: false);
+            if (requestId != _activeRequestId) {
+              return;
+            }
+
+            final prefetchedItems = _dedupeProducts(prefetched.products);
+            _pages[page] = prefetchedItems;
+            mergedItems = _mergeUniqueById(mergedItems, prefetchedItems);
+            lastResult = prefetched;
+            lastPage = page;
+            lastPageItemsCount = prefetchedItems.length;
+
+            if (_countDistinctBrandBuckets(mergedItems) >=
+                _homeInitialMinBrandBuckets) {
+              break;
+            }
+          } catch (_) {
+            // Keep page 1 result if additional prefetch fails.
+            break;
+          }
+        }
+      }
+
+      // If newest pages are dominated by one brand, enrich the pool with a
+      // small top-rated sample only for ranking diversity.
+      if (_shouldApplyHomeRanking &&
+          mergedItems.isNotEmpty &&
+          _countDistinctBrandBuckets(mergedItems) < _homeInitialMinBrandBuckets) {
+        for (var page = 1; page <= _homeDiversityFallbackPages; page++) {
+          try {
+            final fallback = await _fetchHomeDiversityFallbackPage(page: page);
+            if (requestId != _activeRequestId) {
+              return;
+            }
+
+            final fallbackItems = _dedupeProducts(fallback.products);
+            mergedItems = _mergeUniqueById(mergedItems, fallbackItems);
+            if (_countDistinctBrandBuckets(mergedItems) >=
+                _homeInitialMinBrandBuckets) {
+              break;
+            }
+          } catch (_) {
+            break;
+          }
+        }
+      }
+
+      final rankedItems = _applyHomeRankingIfNeeded(mergedItems);
+      final resolvedCurrentPage = mergedItems.isEmpty
+          ? 0
+          : (lastPage <= 0 ? 1 : lastPage);
       final hasMore = _resolveHasMore(
-        result: result,
-        page: 1,
-        pageItemsCount: uniqueItems.length,
-        loadedItemsCount: uniqueItems.length,
+        result: lastResult,
+        page: resolvedCurrentPage <= 0 ? 1 : resolvedCurrentPage,
+        pageItemsCount: lastPageItemsCount,
+        loadedItemsCount: mergedItems.length,
       );
 
       state = state.copyWith(
-        items: uniqueItems,
+        items: rankedItems,
         isLoadingInitial: false,
-        currentPage: uniqueItems.isEmpty ? 0 : 1,
-        totalPages: result.totalPages > 0 ? result.totalPages : 1,
-        totalItems: result.total > 0 ? result.total : uniqueItems.length,
+        currentPage: resolvedCurrentPage,
+        totalPages: lastResult.totalPages > 0 ? lastResult.totalPages : 1,
+        totalItems: lastResult.total > 0 ? lastResult.total : mergedItems.length,
         hasMore: hasMore,
         errorInitial: () => null,
       );
@@ -250,6 +345,7 @@ class PaginatedProductsController
       _pages[nextPage] = pageItems;
 
       final merged = _mergeUniqueById(state.items, pageItems);
+      final rankedMerged = _applyHomeRankingIfNeeded(merged);
       final addedCount = merged.length - state.items.length;
       final hasMore = _resolveHasMore(
         result: result,
@@ -258,8 +354,18 @@ class PaginatedProductsController
         loadedItemsCount: merged.length,
       );
 
+      bool stopForcefully = false;
+      if (addedCount == 0 && hasMore) {
+        // If we added nothing but there is still "more" remotely, 
+        // we might be in a "pagination hole". 
+        // We we allow up to 3 skip attempts in the backend refill, 
+        // but here we just ensure we don't kill the hasMore flag.
+      } else if (pageItems.isEmpty && !hasMore) {
+        stopForcefully = true;
+      }
+
       state = state.copyWith(
-        items: merged,
+        items: rankedMerged,
         isLoadingNext: false,
         currentPage: nextPage,
         totalPages: result.totalPages > 0
@@ -268,7 +374,7 @@ class PaginatedProductsController
         totalItems: result.total > 0
             ? result.total
             : (state.totalItems > 0 ? state.totalItems : merged.length),
-        hasMore: addedCount > 0 ? hasMore : false,
+        hasMore: stopForcefully ? false : hasMore,
         errorNext: () => null,
       );
     } catch (error) {
@@ -327,6 +433,7 @@ class PaginatedProductsController
 
   void _commitNextPageFromCache(int nextPage, List<ProductEntity> pageItems) {
     final merged = _mergeUniqueById(state.items, pageItems);
+    final rankedMerged = _applyHomeRankingIfNeeded(merged);
     final addedCount = merged.length - state.items.length;
     final hasMore = state.totalItems > 0
         ? merged.length < state.totalItems
@@ -336,7 +443,7 @@ class PaginatedProductsController
               ? nextPage < state.totalPages
               : pageItems.length >= state.perPage);
     state = state.copyWith(
-      items: merged,
+      items: rankedMerged,
       currentPage: nextPage,
       hasMore: addedCount > 0 ? hasMore : false,
       errorNext: () => null,
@@ -363,5 +470,83 @@ class PaginatedProductsController
       map[item.id] = item;
     }
     return map.values.toList(growable: false);
+  }
+
+  List<ProductEntity> _applyHomeRankingIfNeeded(List<ProductEntity> items) {
+    if (!_shouldApplyHomeRanking || items.length <= 1) {
+      return items;
+    }
+
+    return _homeRankingService.rankProductsForHome(
+      items,
+      options: _homeRankingOptions,
+      randomSeed: _homeRankingSeed,
+    );
+  }
+
+  bool get _shouldApplyHomeRanking {
+    final search = (arg.search ?? '').trim();
+    final brandName = (arg.brandName ?? '').trim();
+    final sort = (arg.sort ?? '').trim().toLowerCase();
+
+    return search.isEmpty &&
+        arg.categoryId == null &&
+        arg.brandId == null &&
+        brandName.isEmpty &&
+        sort == 'newest';
+  }
+
+  int _nextRankingSeed() {
+    final now = DateTime.now().toUtc();
+    return now.year * 10000 + now.month * 100 + now.day;
+  }
+
+  int _resolveHomeInitialPrefetchMaxPage({required int totalPages}) {
+    if (totalPages > 0) {
+      return totalPages < _homeInitialPrefetchPages
+          ? totalPages
+          : _homeInitialPrefetchPages;
+    }
+    return _homeInitialPrefetchPages;
+  }
+
+  Future<ProductListResult> _fetchHomeDiversityFallbackPage({
+    required int page,
+  }) {
+    return _repository.fetchProducts(
+      page: page,
+      perPage: arg.perPage,
+      search: null,
+      categoryId: null,
+      brandId: null,
+      brandName: null,
+      sort: _homeDiversityFallbackSort,
+      preferCache: false,
+    );
+  }
+
+  int _countDistinctBrandBuckets(List<ProductEntity> items) {
+    final buckets = <String>{};
+    for (final item in items) {
+      buckets.add(_brandBucketKey(item));
+      if (buckets.length >= _homeInitialMinBrandBuckets) {
+        return buckets.length;
+      }
+    }
+    return buckets.length;
+  }
+
+  String _brandBucketKey(ProductEntity item) {
+    if (item.brandId != null && item.brandId! > 0) {
+      return 'id:${item.brandId}';
+    }
+
+    final normalized = item.brandName.trim().toLowerCase();
+    if (normalized.isNotEmpty) {
+      return 'name:$normalized';
+    }
+
+    // Unknown brand should not collapse all unknown products into one bucket.
+    return 'unknown:${item.id}';
   }
 }

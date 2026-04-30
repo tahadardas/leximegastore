@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/app_keys.dart';
 import '../../../../core/auth/auth_session_controller.dart';
 import '../../../../core/services/courier_location_tracker.dart';
+import '../../../../core/services/location_permission_rationale.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/safe_parsers.dart';
 import '../../../../shared/ui/lexi_alert.dart';
@@ -35,7 +36,7 @@ class _DeliveryDashboardPageState extends ConsumerState<DeliveryDashboardPage> {
   void initState() {
     super.initState();
     Future.microtask(
-      () => ref.read(courierLocationTrackerProvider.notifier).requestAccess(),
+      () => ref.read(courierLocationTrackerProvider.notifier).refreshAccess(),
     );
   }
 
@@ -100,7 +101,7 @@ class _DeliveryDashboardPageState extends ConsumerState<DeliveryDashboardPage> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'تعذر تحميل لوحة المندوب حالياً.',
+                            _dashboardErrorMessage(error),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
@@ -211,11 +212,18 @@ class _DeliveryDashboardPageState extends ConsumerState<DeliveryDashboardPage> {
                 isLoading: _locationActionBusy,
                 onPressed: _locationActionBusy
                     ? null
-                    : () => _runLocationAction(
-                        () => ref
+                    : () => _runLocationAction(() async {
+                        final approved =
+                            await showLocationPermissionRationaleDialog(
+                              context,
+                            );
+                        if (!approved) {
+                          return;
+                        }
+                        await ref
                             .read(courierLocationTrackerProvider.notifier)
-                            .requestAccess(),
-                      ),
+                            .requestAccess();
+                      }),
               ),
             ),
             const SizedBox(height: 8),
@@ -958,5 +966,19 @@ class _DeliveryDashboardPageState extends ConsumerState<DeliveryDashboardPage> {
       return value.map((key, val) => MapEntry(key.toString(), val));
     }
     return null;
+  }
+
+  String _dashboardErrorMessage(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('rest_no_route') ||
+        text.contains(
+          'no route was found matching the url and request method',
+        )) {
+      return 'واجهة التوصيل غير مفعلة على الخادم حالياً.';
+    }
+    if (text.contains('401') || text.contains('403')) {
+      return 'حسابك لا يملك صلاحية الوصول إلى لوحة المندوب.';
+    }
+    return 'تعذر تحميل لوحة المندوب حالياً.';
   }
 }

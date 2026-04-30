@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +7,8 @@ import '../../../../app/router/app_routes.dart';
 import '../../../../core/analytics/event_tracker.dart';
 import '../../../../core/errors/app_failure.dart';
 import '../../../../core/services/location_address_service.dart';
+import '../../../../core/services/location_permission_rationale.dart';
+import '../../../../core/session/app_session.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../l10n/l10n.dart';
 import '../../../../design_system/lexi_tokens.dart';
@@ -313,7 +315,12 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     final cartAsync = ref.watch(cartControllerProvider);
     final selectedCity = ref.watch(selectedCityProvider);
     final shippingCostAsync = ref.watch(shippingCostProvider);
-    final accountUser = ref.watch(customerAuthControllerProvider).asData?.value;
+    final isLoggedIn = ref.watch(
+      appSessionProvider.select((session) => session.isLoggedIn),
+    );
+    final accountUser = isLoggedIn
+        ? ref.watch(customerAuthControllerProvider).asData?.value
+        : null;
 
     if (accountUser != null) {
       _applyAccountPrefill(accountUser);
@@ -585,9 +592,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
       shippingCityId: parsedCityId,
       onCodSuccess: (orderId) {
         _clearDraft();
+        final phone = _phone.text.trim();
         context.goNamedSafe(
           AppRouteNames.orderSuccess,
           pathParameters: {'id': orderId},
+          queryParameters: {if (phone.isNotEmpty) 'phone': phone},
         );
       },
       onShamCash:
@@ -660,6 +669,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
 
   Future<void> _fillDeliveryFromCurrentLocation(BuildContext context) async {
     if (_isResolvingDeliveryLocation) {
+      return;
+    }
+
+    final approved = await showLocationPermissionRationaleDialog(context);
+    if (!approved) {
       return;
     }
 
@@ -1013,8 +1027,18 @@ class _CityStep extends ConsumerWidget {
             if (cities.isEmpty) {
               return const Text('لا توجد مدن متاحة حالياً.');
             }
+            final selectedById = selectedCity == null
+                ? null
+                : cities
+                      .where((city) => city.id == selectedCity.id)
+                      .firstOrNull;
+            if (selectedCity != selectedById) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                ref.read(selectedCityProvider.notifier).state = selectedById;
+              });
+            }
             return DropdownButtonFormField<City>(
-              initialValue: selectedCity,
+              initialValue: selectedById,
               decoration: const InputDecoration(
                 labelText: 'مدينة الشحن',
                 border: OutlineInputBorder(),

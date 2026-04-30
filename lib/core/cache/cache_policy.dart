@@ -1,6 +1,7 @@
 enum CacheKey {
   homeCategories,
   homeDeals,
+  homeAdBanners,
   homeProducts,
   categoriesList,
   productsByCategory,
@@ -15,6 +16,7 @@ abstract final class CachePolicy {
     return switch (key) {
       CacheKey.homeCategories => _ttl24Hours,
       CacheKey.homeDeals => _ttl30Minutes,
+      CacheKey.homeAdBanners => _ttl30Minutes,
       CacheKey.homeProducts => _ttl30Minutes,
       CacheKey.categoriesList => _ttl24Hours,
       CacheKey.productsByCategory => _ttl30Minutes,

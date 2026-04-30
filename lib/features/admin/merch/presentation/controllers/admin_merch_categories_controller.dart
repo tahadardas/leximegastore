@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/cache/cache_policy.dart';
+import '../../../../../core/cache/cache_store.dart';
+import '../../../../categories/presentation/controllers/categories_controller.dart';
 import '../../data/repositories/admin_merch_repository.dart';
 import '../../domain/entities/admin_merch_category.dart';
 
@@ -29,6 +32,11 @@ class AdminMerchCategoriesController
 
   Future<void> saveOrder(List<AdminMerchCategory> items) async {
     await ref.read(adminMerchRepositoryProvider).saveCategoriesOrder(items);
-    state = AsyncData(items);
+    await ref
+        .read(cacheStoreProvider)
+        .deleteByPrefix(CachePolicy.key(CacheKey.categoriesList));
+    ref.invalidate(categoriesControllerProvider);
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(_fetch);
   }
 }

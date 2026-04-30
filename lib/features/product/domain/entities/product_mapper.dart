@@ -22,7 +22,11 @@ extension ProductModelMapper on ProductModel {
       wishlistCount: wishlistCount,
       brandId: brandId,
       brandName: brandName,
+      categoryIds: categoryIds,
       type: type,
+      createdAt: createdAt,
+      salesCount: salesCount,
+      viewsCount: viewsCount,
       saleEndDate: dateOnSaleTo != null
           ? DateTime.fromMillisecondsSinceEpoch(dateOnSaleTo! * 1000)
           : null,
@@ -51,7 +55,11 @@ extension ProductEntityMapper on ProductEntity {
       wishlistCount: wishlistCount,
       brandId: brandId,
       brandName: brandName,
+      categoryIds: categoryIds,
       type: type,
+      createdAt: createdAt,
+      salesCount: salesCount,
+      viewsCount: viewsCount,
       dateOnSaleTo: saleEndDate != null
           ? (saleEndDate!.millisecondsSinceEpoch / 1000).round()
           : null,

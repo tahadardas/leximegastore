@@ -22,7 +22,9 @@ final deviceIdProvider = FutureProvider<String>((ref) async {
 String _generateDeviceId() {
   final random = Random.secure();
   final partA = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-  final partB = random.nextInt(1 << 32).toRadixString(36);
-  final partC = random.nextInt(1 << 32).toRadixString(36);
+  // Using 1 << 31 (2^31) is safe on both VM and Web/JS.
+  // 1 << 32 overflows to 0 in JS bitwise ops, causing RangeError in nextInt(0).
+  final partB = random.nextInt(1 << 31).toRadixString(36);
+  final partC = random.nextInt(1 << 31).toRadixString(36);
   return '$partA-$partB-$partC';
 }

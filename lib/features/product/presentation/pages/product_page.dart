@@ -48,6 +48,7 @@ class ProductPage extends ConsumerStatefulWidget {
 }
 
 class _ProductPageState extends ConsumerState<ProductPage> {
+  static const double _stickyActionHeight = 54;
   int _imageIndex = 0;
   ProductVariationOption? _selectedVariation;
   final ScrollController _scrollController = ScrollController();
@@ -701,28 +702,46 @@ class _ProductPageState extends ConsumerState<ProductPage> {
             color: LexiColors.white,
             boxShadow: LexiShadows.card,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 50,
-                  child: inCartQty > 0
-                      ? _buildInlineCounter(inCartQty, cartKey)
-                      : ElevatedButton.icon(
-                          onPressed: isUnavailableForPurchase
-                              ? null
-                              : () => _addToCartAndMaybeCheckout(
-                                  product: product,
-                                  checkoutNow: false,
-                                ),
+          child: inCartQty > 0
+              ? Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: _stickyActionHeight,
+                        child: _buildInlineCounter(inCartQty, cartKey),
+                      ),
+                    ),
+                    const SizedBox(width: LexiSpacing.s8),
+                    Expanded(
+                      child: SizedBox(
+                        height: _stickyActionHeight,
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              context.goNamedSafe(AppRouteNames.cart),
                           icon: const FaIcon(
-                            FontAwesomeIcons.cartPlus,
+                            FontAwesomeIcons.cartShopping,
                             size: 14,
                           ),
-                          label: const Text('أضف للسلة'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LexiColors.brandPrimary,
+                          label: const Text(
+                            'عرض السلة',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
                             foregroundColor: LexiColors.textPrimary,
+                            backgroundColor: LexiColors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 0,
+                            ),
+                            minimumSize: const Size.fromHeight(
+                              _stickyActionHeight,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            side: const BorderSide(
+                              color: LexiColors.brandPrimary,
+                              width: 1.2,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
                                 LexiRadius.button,
@@ -730,39 +749,42 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                             ),
                           ),
                         ),
-                ),
-              ),
-              const SizedBox(width: LexiSpacing.s8),
-              Expanded(
-                child: SizedBox(
-                  height: 50,
+                      ),
+                    ),
+                  ],
+                )
+              : SizedBox(
+                  width: double.infinity,
+                  height: _stickyActionHeight,
                   child: ElevatedButton.icon(
                     onPressed: isUnavailableForPurchase
                         ? null
-                        : () => _addToCartAndMaybeCheckout(
-                            product: product,
-                            checkoutNow: true,
-                          ),
-                    icon: const FaIcon(FontAwesomeIcons.bolt, size: 14),
+                        : () => _addToCart(product: product),
+                    icon: const FaIcon(FontAwesomeIcons.cartPlus, size: 14),
                     label: Text(
                       isOutOfStock
                           ? 'غير متوفر'
                           : !hasPrice
                           ? 'السعر غير متاح'
-                          : 'أضف مقابل ${CurrencyFormatter.formatAmount(finalPrice)}',
+                          : 'أضف للسلة',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: LexiColors.textPrimary,
-                      foregroundColor: LexiColors.white,
+                      backgroundColor: LexiColors.brandPrimary,
+                      foregroundColor: LexiColors.textPrimary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 0,
+                      ),
+                      minimumSize: const Size.fromHeight(_stickyActionHeight),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(LexiRadius.button),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -783,6 +805,8 @@ class _ProductPageState extends ConsumerState<ProductPage> {
               HapticFeedback.lightImpact();
               ref.read(cartControllerProvider.notifier).decrement(cartKey);
             },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             icon: FaIcon(
               qty == 1 ? FontAwesomeIcons.trashCan : FontAwesomeIcons.minus,
               size: 16,
@@ -808,6 +832,8 @@ class _ProductPageState extends ConsumerState<ProductPage> {
               HapticFeedback.lightImpact();
               ref.read(cartControllerProvider.notifier).increment(cartKey);
             },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             icon: const FaIcon(
               FontAwesomeIcons.plus,
               size: 16,
@@ -819,10 +845,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
     );
   }
 
-  Future<void> _addToCartAndMaybeCheckout({
-    required ProductEntity product,
-    required bool checkoutNow,
-  }) async {
+  Future<void> _addToCart({required ProductEntity product}) async {
     HapticFeedback.mediumImpact();
 
     final selectedPrice = _selectedVariation?.price ?? product.price;
@@ -855,14 +878,6 @@ class _ProductPageState extends ConsumerState<ProductPage> {
     );
 
     await ref.read(cartControllerProvider.notifier).addItem(cartItem);
-    if (!mounted) {
-      return;
-    }
-
-    if (checkoutNow) {
-      context.pushNamedIfNotCurrent(AppRouteNames.checkout);
-      return;
-    }
   }
 
   List<String> _resolvedGallery(
@@ -872,6 +887,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
     final result = <String>[
       if ((selectedVariation?.imageUrl ?? '').trim().isNotEmpty)
         selectedVariation!.imageUrl!,
+      product.primaryImage,
       ...product.images,
     ];
 
@@ -943,15 +959,15 @@ class _ProductPageState extends ConsumerState<ProductPage> {
     if (!isLoggedIn) {
       await LexiAlert.confirm(
         context,
-        title: 'إزالة من المفضلة؟',
-        text: 'سيتم حذف المنتج من قائمة المفضلة لديك.',
-        confirmText: 'إزالة المنتج',
-        cancelText: 'إلغاء',
+        title: 'تسجيل الدخول مطلوب',
+        text: 'يرجى تسجيل الدخول لإضافة تقييم لهذا المنتج.',
+        confirmText: 'تسجيل الدخول',
+        cancelText: 'لاحقاً',
         onConfirm: () async {
           if (!mounted) {
             return;
           }
-          context.go('/login');
+          context.goNamedSafe(AppRouteNames.login);
         },
       );
       return;

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -70,6 +71,7 @@ class ProductCardImage extends StatelessWidget {
                   tag: heroTag,
                   child: _CardNetworkImage(
                     imageUrl: images.first,
+                    fallbackImageUrls: images.skip(1).toList(growable: false),
                     fit: fit,
                     memCacheWidth: memCacheWidth,
                     aspectRatio: aspectRatio,
@@ -84,6 +86,10 @@ class ProductCardImage extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final image = _CardNetworkImage(
                       imageUrl: images[index],
+                      fallbackImageUrls: [
+                        ...images.skip(index + 1),
+                        ...images.take(index),
+                      ],
                       fit: fit,
                       memCacheWidth: memCacheWidth,
                       aspectRatio: aspectRatio,
@@ -102,12 +108,14 @@ class ProductCardImage extends StatelessWidget {
 
 class _CardNetworkImage extends StatelessWidget {
   final String imageUrl;
+  final List<String> fallbackImageUrls;
   final BoxFit fit;
   final int? memCacheWidth;
   final double aspectRatio;
 
   const _CardNetworkImage({
     required this.imageUrl,
+    this.fallbackImageUrls = const <String>[],
     required this.fit,
     required this.memCacheWidth,
     required this.aspectRatio,
@@ -115,12 +123,35 @@ class _CardNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final normalized = normalizeNullableHttpUrl(imageUrl);
-    if ((normalized ?? '').isEmpty) {
+    final candidates = _uniqueCandidates([imageUrl, ...fallbackImageUrls]);
+    return _buildCandidate(context, candidates, 0);
+  }
+
+  Widget _buildCandidate(
+    BuildContext context,
+    List<String> candidates,
+    int index,
+  ) {
+    if (index >= candidates.length) {
       return const _CardImageFallback();
     }
 
+    final normalized = normalizeNullableHttpUrl(candidates[index]);
+    if ((normalized ?? '').isEmpty) {
+      return _buildCandidate(context, candidates, index + 1);
+    }
+
     final optimized = ImageUrlOptimizer.optimize(normalized!, preferWebp: true);
+    if (kIsWeb) {
+      return _buildWebImage(
+        url: optimized,
+        rawUrl: normalized,
+        candidates: candidates,
+        index: index,
+        canTryRaw: optimized != normalized,
+      );
+    }
+
     return CachedNetworkImage(
       imageUrl: optimized,
       cacheManager: LexiCacheManager.instance,
@@ -138,8 +169,55 @@ class _CardNetworkImage extends StatelessWidget {
         );
       },
       placeholder: (context, url) => const _CardImagePlaceholder(),
-      errorWidget: (context, url, error) => const _CardImageFallback(),
+      errorWidget: (context, url, error) =>
+          _buildCandidate(context, candidates, index + 1),
     );
+  }
+
+  Widget _buildWebImage({
+    required String url,
+    required String rawUrl,
+    required List<String> candidates,
+    required int index,
+    required bool canTryRaw,
+  }) {
+    return Image.network(
+      url,
+      fit: fit,
+      filterQuality: FilterQuality.medium,
+      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        return const _CardImagePlaceholder();
+      },
+      errorBuilder: (context, error, stackTrace) {
+        if (canTryRaw && rawUrl.trim().isNotEmpty && rawUrl != url) {
+          return _buildWebImage(
+            url: rawUrl,
+            rawUrl: rawUrl,
+            candidates: candidates,
+            index: index,
+            canTryRaw: false,
+          );
+        }
+        return _buildCandidate(context, candidates, index + 1);
+      },
+    );
+  }
+
+  List<String> _uniqueCandidates(Iterable<String> rawUrls) {
+    final output = <String>[];
+    final seen = <String>{};
+    for (final rawUrl in rawUrls) {
+      final normalized = normalizeNullableHttpUrl(rawUrl);
+      if (normalized == null || !seen.add(normalized)) {
+        continue;
+      }
+      output.add(normalized);
+    }
+    return output;
   }
 }
 

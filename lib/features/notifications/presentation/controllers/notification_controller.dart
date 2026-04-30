@@ -396,10 +396,10 @@ class UnreadCountRefresher extends StateNotifier<void> {
 
   void _startPolling() {
     _timer?.cancel();
-    // Poll every 60 seconds
-    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
-      _refresh();
-    });
+    // Periodic polling disabled in favor of NotificationsRealtimeService
+    // _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+    //   _refresh();
+    // });
   }
 
   void _refresh() {

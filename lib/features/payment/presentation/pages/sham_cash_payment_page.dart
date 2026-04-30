@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +13,7 @@ import '../../../../config/constants/endpoints.dart';
 import '../../../../core/locks/submit_locks.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../shared/ui/lexi_alert.dart';
 import '../../../../ui/widgets/lexi_safe_bottom.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/error_state.dart';
@@ -48,6 +51,8 @@ class ShamCashPaymentPage extends ConsumerStatefulWidget {
 }
 
 class _ShamCashPaymentPageState extends ConsumerState<ShamCashPaymentPage> {
+  static final Set<String> _shownPendingReminderOrderIds = <String>{};
+
   final _picker = ImagePicker();
 
   XFile? _proofImage;
@@ -78,6 +83,32 @@ class _ShamCashPaymentPageState extends ConsumerState<ShamCashPaymentPage> {
         : 'اكتب رقم الطلب في ملاحظات التحويل ثم ارفع صورة الإيصال.';
 
     _loadConfig();
+    _schedulePendingProofReminder();
+  }
+
+  void _schedulePendingProofReminder() {
+    final normalizedOrderId = widget.orderId.trim();
+    if (normalizedOrderId.isEmpty) {
+      return;
+    }
+    if (_shownPendingReminderOrderIds.contains(normalizedOrderId)) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _proofImage != null) {
+        return;
+      }
+      _shownPendingReminderOrderIds.add(normalizedOrderId);
+      unawaited(
+        LexiAlert.info(
+          context,
+          title: 'تنبيه',
+          text:
+              'إذا لم ترفع إثبات الدفع الآن، فطلبك محفوظ في القائمة الجانبية ضمن صفحة "شام كاش غير المكتملة".',
+        ),
+      );
+    });
   }
 
   Future<void> _loadConfig() async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,10 +19,6 @@ final customerAuthControllerProvider =
     StateNotifierProvider<CustomerAuthController, AsyncValue<CustomerUser?>>((
       ref,
     ) {
-      final authStatus = ref.watch(
-        authSessionControllerProvider.select((s) => s.state.status),
-      );
-
       final controller = CustomerAuthController(
         repo: ref.watch(customerAuthRepositoryProvider),
         storage: ref.watch(secureStoreProvider),
@@ -30,12 +27,22 @@ final customerAuthControllerProvider =
         ref: ref,
       );
 
-      // Auto-logout feature state when core session is cleared
-      if (authStatus == AuthSessionStatus.unauthenticated) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          controller.handleLogout();
-        });
-      }
+      // Only react to authenticated -> unauthenticated transitions.
+      // This prevents clearing guest cart/state on app startup.
+      ref.listen<AuthSessionStatus>(
+        authSessionControllerProvider.select((s) => s.state.status),
+        (previous, next) {
+          final becameUnauthenticated =
+              previous == AuthSessionStatus.authenticated &&
+              next == AuthSessionStatus.unauthenticated;
+          if (!becameUnauthenticated) {
+            return;
+          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            unawaited(controller.handleLogout());
+          });
+        },
+      );
 
       return controller;
     });
@@ -47,6 +54,7 @@ class CustomerAuthController extends StateNotifier<AsyncValue<CustomerUser?>> {
   final AuthSessionController _authSessionController;
   final Ref _ref;
   bool _disposed = false;
+  bool _isHandlingLogout = false;
 
   CustomerAuthController({
     required CustomerAuthRepository repo,
@@ -258,17 +266,26 @@ class CustomerAuthController extends StateNotifier<AsyncValue<CustomerUser?>> {
   /// Clears feature-specific data (cart, wishlist, orders state).
   /// Called during logout or when core session is invalidated.
   Future<void> handleLogout() async {
+    if (_isHandlingLogout) {
+      return;
+    }
+    _isHandlingLogout = true;
+
     final storage = _ref.read(secureStoreProvider);
-    await _ref.read(cartControllerProvider.notifier).clearCart();
-    await _ref.read(wishlistControllerProvider.notifier).clear();
-    await storage.deleteSupportTicketsJson();
-    await storage.deleteCustomerUserJson();
-    await storage.deleteAdminUserJson();
+    try {
+      await _ref.read(cartControllerProvider.notifier).clearCart();
+      await _ref.read(wishlistControllerProvider.notifier).clear();
+      await storage.deleteSupportTicketsJson();
+      await storage.deleteCustomerUserJson();
+      await storage.deleteAdminUserJson();
 
-    _setState(const AsyncData(null));
+      _setState(const AsyncData(null));
 
-    _ref.invalidate(myOrdersControllerProvider);
-    _ref.invalidate(selectedCityProvider);
+      _ref.invalidate(myOrdersControllerProvider);
+      _ref.invalidate(selectedCityProvider);
+    } finally {
+      _isHandlingLogout = false;
+    }
   }
 
   bool get isAuthenticated => state.asData?.value != null;

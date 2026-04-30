@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/cache/cache_policy.dart';
+import '../../../../../core/cache/cache_store.dart';
 import '../../data/repositories/admin_merch_repository.dart';
 import '../../domain/entities/admin_merch_product.dart';
 
@@ -37,13 +39,27 @@ class AdminCategoryMerchController
     await ref
         .read(adminMerchRepositoryProvider)
         .saveCategoryProducts(termId: arg, items: items);
-    state = AsyncData(items);
+    await _invalidateCategoryProductCache();
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(_fetch);
   }
 
   Future<void> clearOrder() async {
     await ref
         .read(adminMerchRepositoryProvider)
         .saveCategoryProducts(termId: arg, items: const [], replaceAll: true);
+    await _invalidateCategoryProductCache();
     await search(_search);
+  }
+
+  Future<void> _invalidateCategoryProductCache() {
+    return ref
+        .read(cacheStoreProvider)
+        .deleteByPrefix(
+          CachePolicy.key(
+            CacheKey.productsByCategory,
+            suffix: 'category:$arg|',
+          ),
+        );
   }
 }

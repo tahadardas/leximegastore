@@ -12,11 +12,11 @@ final homeSectionsControllerProvider =
     );
 
 class HomeSectionsController extends AsyncNotifier<List<HomeSectionEntity>> {
-  static const Duration _minimumLoadingDuration = Duration(milliseconds: 650);
+  static const Duration _minimumLoadingDuration = Duration(milliseconds: 280);
 
   @override
   FutureOr<List<HomeSectionEntity>> build() async {
-    return _fetchWithMinimumDelay(preferCache: false);
+    return _fetchWithMinimumDelay(preferCache: true);
   }
 
   Future<List<HomeSectionEntity>> _fetch({required bool preferCache}) {

@@ -10,6 +10,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../firebase_options.dart';
 
 import '../../app/app_keys.dart';
 import '../../app/router/app_router.dart';
@@ -19,6 +20,7 @@ import '../../core/logging/app_logger.dart';
 import '../../core/network/dio_client.dart';
 import '../session/app_session.dart';
 import '../storage/secure_store.dart';
+import '../auth/auth_session_controller.dart';
 import '../device/device_id_provider.dart';
 import 'device_token_store.dart';
 import 'notification_contract.dart';
@@ -41,6 +43,7 @@ final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 bool _localNotificationsInitialized = false;
+bool _backgroundHandlersRegistered = false;
 
 final StreamController<NotificationResponse> _notificationResponseController =
     StreamController<NotificationResponse>.broadcast();
@@ -49,7 +52,9 @@ final StreamController<NotificationResponse> _notificationResponseController =
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     await _ensureLocalNotificationsInitialized();
     await _showLocalNotificationFromRemoteMessage(message);
   } catch (error, stackTrace) {
@@ -206,13 +211,11 @@ Future<void> _showCourierAssignmentLocalNotification({
       channelDescription: 'Urgent courier assignment decisions.',
       importance: Importance.max,
       priority: Priority.max,
-      category: AndroidNotificationCategory.call,
+      category: AndroidNotificationCategory.status,
       visibility: NotificationVisibility.public,
       playSound: true,
       sound: const RawResourceAndroidNotificationSound(_kCourierSoundResource),
       vibrationPattern: Int64List.fromList(<int>[0, 700, 400, 900, 300, 1200]),
-      audioAttributesUsage: AudioAttributesUsage.alarm,
-      fullScreenIntent: true,
       autoCancel: false,
       ongoing: true,
       timeoutAfter: payload.ttlSeconds * 1000,
@@ -246,6 +249,8 @@ Future<void> _showCourierAssignmentLocalNotification({
 }
 
 class FirebasePushService {
+  static const _kLastSenderIdPrefsKey = 'lexi_push_last_sender_id';
+
   final Ref _ref;
 
   bool _initialized = false;
@@ -257,6 +262,10 @@ class FirebasePushService {
   FirebasePushService(this._ref);
 
   static void registerBackgroundHandlers() {
+    if (_backgroundHandlersRegistered) {
+      return;
+    }
+    _backgroundHandlersRegistered = true;
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
@@ -265,6 +274,13 @@ class FirebasePushService {
       return;
     }
     _initialized = true;
+
+    // Listen for auth state changes to re-register token
+    _ref.listen(authSessionControllerProvider, (previous, next) {
+      if (previous?.state.status != next.state.status) {
+        unawaited(_syncTokenOnAuthChange());
+      }
+    });
 
     if (kIsWeb) {
       AppLogger.info(
@@ -280,7 +296,9 @@ class FirebasePushService {
     }
 
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
     } catch (error, stackTrace) {
       await AppLogger.error('Firebase.initializeApp failed', error, stackTrace);
       return;
@@ -291,11 +309,37 @@ class FirebasePushService {
     await _consumePendingNotificationResponses();
 
     final messaging = FirebaseMessaging.instance;
+    try {
+      await messaging.setAutoInitEnabled(true);
+    } catch (error, stackTrace) {
+      await AppLogger.error('FCM auto-init enabling failed', error, stackTrace);
+    }
+
+    // Detect project/sender-id change and force refresh
+    try {
+      final currentSenderId =
+          DefaultFirebaseOptions.currentPlatform.messagingSenderId;
+      final prefs = await SharedPreferences.getInstance();
+      final lastSenderId = prefs.getString(_kLastSenderIdPrefsKey);
+
+      if (lastSenderId != null && lastSenderId != currentSenderId) {
+        AppLogger.info(
+          'FCM Sender ID changed from $lastSenderId to $currentSenderId. Forcing token refresh.',
+        );
+        await messaging.deleteToken();
+      }
+      await prefs.setString(_kLastSenderIdPrefsKey, currentSenderId);
+    } catch (e) {
+      AppLogger.warn('Failed to check for Sender ID change: $e');
+    }
 
     try {
       final token = await messaging.getToken();
       if ((token ?? '').trim().isNotEmpty) {
-        await _registerToken(token!.trim());
+        AppLogger.info('--- FCM TOKEN START ---');
+        AppLogger.info(token!.trim());
+        AppLogger.info('--- FCM TOKEN END ---');
+        await _registerToken(token.trim());
       }
     } catch (error, stackTrace) {
       await AppLogger.error('FCM getToken failed', error, stackTrace);
@@ -365,6 +409,23 @@ class FirebasePushService {
     } catch (error, stackTrace) {
       await AppLogger.error('FCM getInitialMessage failed', error, stackTrace);
     }
+  }
+
+  Future<bool> areNotificationsAuthorized() async {
+    try {
+      final settings = await FirebaseMessaging.instance
+          .getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Request notification permission contextually from user-triggered flows.
+  Future<void> requestNotificationsPermissionFromUser() async {
+    await _requestNotificationPermissions();
+    await syncTokenRegistration();
   }
 
   Future<void> syncTokenRegistration() async {
@@ -469,6 +530,15 @@ class FirebasePushService {
     );
   }
 
+  Future<void> _syncTokenOnAuthChange() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await _registerToken(token);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _registerToken(String token) async {
     final safeToken = token.trim();
     if (safeToken.isEmpty) {
@@ -503,26 +573,113 @@ class FirebasePushService {
         }
       }
 
-      final client = _ref.read(dioClientProvider);
-      await client.post(
+      final registrationPayload = <String, dynamic>{
+        'token': safeToken,
+        'fcm_token': safeToken,
+        'device_id': deviceId,
+        'platform': platform,
+        'sender_id': DefaultFirebaseOptions.currentPlatform.messagingSenderId,
+        'firebase_project_id': DefaultFirebaseOptions.currentPlatform.projectId,
+        'role': role,
+        ...?userId == null ? null : <String, dynamic>{'user_id': userId},
+        ...?userId == null ? <String, dynamic>{'guest_id': deviceId} : null,
+      };
+
+      final registrationEndpoints = <String>{
         Endpoints.devicesRegister(),
-        data: <String, dynamic>{
-          'token': safeToken,
-          'fcm_token': safeToken,
-          'device_id': deviceId,
-          'platform': platform,
-          'role': role,
-          ...?userId == null ? null : <String, dynamic>{'user_id': userId},
-          ...?userId == null ? <String, dynamic>{'guest_id': deviceId} : null,
-        },
-        options: Options(
-          extra: const <String, dynamic>{'requiresAuth': false},
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
+        Endpoints.notificationsRegisterToken(),
+      };
+      final shouldTryAuthenticated =
+          session.isLoggedIn && session.hasStoredToken;
+      final registrationAuthModes = <bool>[
+        if (shouldTryAuthenticated) true,
+        false,
+      ];
+
+      Object? lastError;
+      StackTrace? lastStackTrace;
+
+      for (final endpoint in registrationEndpoints) {
+        for (final requiresAuth in registrationAuthModes) {
+          try {
+            await _registerTokenAtEndpoint(
+              endpoint: endpoint,
+              deviceId: deviceId,
+              payload: registrationPayload,
+              requiresAuth: requiresAuth,
+            );
+            if (endpoint != Endpoints.devicesRegister()) {
+              AppLogger.info(
+                'FCM token registration used fallback endpoint: $endpoint',
+              );
+            }
+            if (requiresAuth == false && shouldTryAuthenticated) {
+              AppLogger.warn(
+                'FCM token registration fell back to guest mode after authenticated attempt.',
+              );
+            }
+            return;
+          } catch (error, stackTrace) {
+            lastError = error;
+            lastStackTrace = stackTrace;
+            AppLogger.warn(
+              'FCM token registration failed at endpoint $endpoint (requiresAuth=$requiresAuth): $error',
+            );
+          }
+        }
+      }
+
+      if (lastError != null && lastStackTrace != null) {
+        await AppLogger.error(
+          'Registering FCM token failed on all endpoints',
+          lastError,
+          lastStackTrace,
+        );
+      }
     } catch (error, stackTrace) {
       await AppLogger.error('Registering FCM token failed', error, stackTrace);
     }
+  }
+
+  Future<void> _registerTokenAtEndpoint({
+    required String endpoint,
+    required String deviceId,
+    required Map<String, dynamic> payload,
+    required bool requiresAuth,
+  }) async {
+    final response = await _ref
+        .read(dioClientProvider)
+        .post(
+          endpoint,
+          data: payload,
+          options: Options(
+            extra: <String, dynamic>{'requiresAuth': requiresAuth},
+            headers: <String, dynamic>{'Device-Id': deviceId},
+          ),
+        );
+
+    final responseMap = extractMap(response.data);
+    final successValue = responseMap['success'];
+    final isMarkedSuccess =
+        successValue == null ||
+        successValue == true ||
+        successValue == 1 ||
+        successValue == '1';
+
+    if (!isMarkedSuccess) {
+      final message = _extractApiErrorMessage(responseMap);
+      if (message.isNotEmpty) {
+        throw StateError(
+          'FCM token registration rejected at $endpoint: $message',
+        );
+      }
+      throw StateError('FCM token registration rejected at $endpoint.');
+    }
+  }
+
+  String _extractApiErrorMessage(Map<String, dynamic> payload) {
+    final nested = extractMap(payload['error']);
+    return (nested['message'] ?? payload['message'] ?? '').toString().trim();
   }
 
   Future<void> _handleLocalNotificationResponse(

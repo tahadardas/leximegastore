@@ -94,5 +94,8 @@ class RequestQueueInterceptor extends Interceptor {
 }
 
 final requestQueueProvider = Provider<RequestQueue>((ref) {
-  return RequestQueue(maxConcurrent: 4);
+  // Keep bounded concurrency on web, but allow small overlap so startup
+  // payloads don't become strictly serialized.
+  final maxConcurrent = kIsWeb ? 2 : 4;
+  return RequestQueue(maxConcurrent: maxConcurrent);
 });

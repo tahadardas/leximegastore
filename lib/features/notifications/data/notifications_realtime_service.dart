@@ -16,7 +16,7 @@ class NotificationsRealtimeSnapshot {
   final bool isLoading;
   final bool isStale;
   final Object? error;
-  final DateTime? updatedAt;
+  final DateTime? itemsUpdatedAt;
 
   const NotificationsRealtimeSnapshot({
     this.customerItems = const <NotificationEntity>[],
@@ -26,8 +26,11 @@ class NotificationsRealtimeSnapshot {
     this.isLoading = false,
     this.isStale = false,
     this.error,
-    this.updatedAt,
+    this.itemsUpdatedAt,
   });
+
+  @Deprecated('Use itemsUpdatedAt')
+  DateTime? get updatedAt => itemsUpdatedAt;
 
   int get totalUnreadCount => customerUnreadCount + adminUnreadCount;
 
@@ -39,7 +42,7 @@ class NotificationsRealtimeSnapshot {
     bool? isLoading,
     bool? isStale,
     Object? error = _noValue,
-    DateTime? updatedAt,
+    DateTime? itemsUpdatedAt,
   }) {
     return NotificationsRealtimeSnapshot(
       customerItems: customerItems ?? this.customerItems,
@@ -49,7 +52,7 @@ class NotificationsRealtimeSnapshot {
       isLoading: isLoading ?? this.isLoading,
       isStale: isStale ?? this.isStale,
       error: identical(error, _noValue) ? this.error : error,
-      updatedAt: updatedAt ?? this.updatedAt,
+      itemsUpdatedAt: itemsUpdatedAt ?? this.itemsUpdatedAt,
     );
   }
 }
@@ -57,7 +60,7 @@ class NotificationsRealtimeSnapshot {
 const Object _noValue = Object();
 
 class NotificationsRealtimeService {
-  static const Duration defaultInterval = Duration(seconds: 30);
+  static const Duration defaultInterval = Duration(seconds: 45);
 
   final NotificationRepository Function() _repoGetter;
   final AppSession Function() _sessionGetter;
@@ -95,13 +98,14 @@ class NotificationsRealtimeService {
     if (_disposed) {
       return;
     }
-    if (_snapshot.updatedAt != null || _snapshot.isLoading) {
+    if (_snapshot.itemsUpdatedAt != null) {
+      await refreshNow(onlyCount: true);
       return;
     }
     await refreshNow(soft: false);
   }
 
-  Future<void> refreshNow({bool soft = true}) async {
+  Future<void> refreshNow({bool soft = true, bool onlyCount = false}) async {
     if (_disposed) {
       return;
     }
@@ -117,6 +121,11 @@ class NotificationsRealtimeService {
         return;
       }
 
+      if (soft && !onlyCount && _snapshot.itemsUpdatedAt != null) {
+        // We already have item data, skip soft item refresh
+        return;
+      }
+
       final hasCached =
           _snapshot.customerItems.isNotEmpty || _snapshot.adminItems.isNotEmpty;
       if (!soft || !hasCached) {
@@ -128,6 +137,34 @@ class NotificationsRealtimeService {
       try {
         final repo = _repoGetter();
 
+        if (onlyCount) {
+          final customerLocalUnread = _localUnreadCount(
+            _snapshot.customerItems,
+          );
+          final customerCount = await _safeUnreadCount(
+            resolver: () => repo.getCustomerUnreadCount(),
+            fallback: customerLocalUnread,
+          );
+          final adminLocalUnread = _localUnreadCount(_snapshot.adminItems);
+          final adminCount = session.isAdmin
+              ? await _safeUnreadCount(
+                  resolver: () => repo.getAdminUnreadCount(),
+                  fallback: adminLocalUnread,
+                )
+              : 0;
+
+          _emit(
+            _snapshot.copyWith(
+              customerUnreadCount: customerCount,
+              adminUnreadCount: adminCount,
+              isLoading: false,
+              isStale: false,
+              error: null,
+            ),
+          );
+          return;
+        }
+
         final customerFuture = repo.getCustomerNotifications(
           page: 1,
           perPage: 30,
@@ -138,17 +175,27 @@ class NotificationsRealtimeService {
 
         final customerPage = await customerFuture;
         final adminPage = await adminFuture;
+        final customerCount = await _safeUnreadCount(
+          resolver: () => repo.getCustomerUnreadCount(),
+          fallback: customerPage.unreadCount,
+        );
+        final adminCount = session.isAdmin
+            ? await _safeUnreadCount(
+                resolver: () => repo.getAdminUnreadCount(),
+                fallback: adminPage.unreadCount,
+              )
+            : 0;
 
         _emit(
           NotificationsRealtimeSnapshot(
             customerItems: customerPage.notifications,
             adminItems: adminPage.notifications,
-            customerUnreadCount: customerPage.unreadCount,
-            adminUnreadCount: adminPage.unreadCount,
+            customerUnreadCount: customerCount,
+            adminUnreadCount: adminCount,
             isLoading: false,
             isStale: false,
             error: null,
-            updatedAt: DateTime.now(),
+            itemsUpdatedAt: DateTime.now(),
           ),
         );
       } catch (error) {
@@ -171,11 +218,33 @@ class NotificationsRealtimeService {
             isLoading: false,
             isStale: false,
             error: error,
-            updatedAt: _snapshot.updatedAt,
+            itemsUpdatedAt: _snapshot.itemsUpdatedAt,
           ),
         );
       }
     });
+  }
+
+  Future<int> _safeUnreadCount({
+    required Future<int> Function() resolver,
+    required int fallback,
+  }) async {
+    try {
+      final count = await resolver();
+      if (count < 0) {
+        return 0;
+      }
+      return count;
+    } catch (_) {
+      return fallback < 0 ? 0 : fallback;
+    }
+  }
+
+  int _localUnreadCount(List<NotificationEntity> items) {
+    if (items.isEmpty) {
+      return 0;
+    }
+    return items.where((item) => !item.isRead).length;
   }
 
   Future<void> markCustomerRead(int notificationId) async {
@@ -212,6 +281,7 @@ class NotificationsRealtimeService {
 
     try {
       await _repoGetter().markCustomerRead(ids: <int>[notificationId]);
+      await refreshNow(onlyCount: true);
     } catch (_) {
       await refreshNow(soft: false);
     }
@@ -251,6 +321,7 @@ class NotificationsRealtimeService {
 
     try {
       await _repoGetter().markAdminRead(ids: <int>[notificationId]);
+      await refreshNow(onlyCount: true);
     } catch (_) {
       await refreshNow(soft: false);
     }
@@ -268,6 +339,7 @@ class NotificationsRealtimeService {
 
     try {
       await _repoGetter().markAllCustomerRead();
+      await refreshNow(soft: false);
     } catch (_) {
       await refreshNow(soft: false);
     }
@@ -285,6 +357,7 @@ class NotificationsRealtimeService {
 
     try {
       await _repoGetter().markAllAdminRead();
+      await refreshNow(soft: false);
     } catch (_) {
       await refreshNow(soft: false);
     }
@@ -302,19 +375,22 @@ class NotificationsRealtimeService {
       return;
     }
 
+    // Immediately emit current state to new listener
     final controller = _controller;
     if (controller != null && !controller.isClosed) {
-      controller.add(_snapshot);
+      // Use scheduleMicrotask to ensure the listener is ready
+      scheduleMicrotask(() {
+        if (!controller.isClosed) {
+          controller.add(_snapshot);
+        }
+      });
     }
 
     if (_enableInternalTimer) {
       _timer ??= Timer.periodic(_interval, (_) {
-        unawaited(refreshNow());
+        final shouldCountOnly = _snapshot.itemsUpdatedAt != null;
+        unawaited(refreshNow(onlyCount: shouldCountOnly));
       });
-    }
-
-    if (_snapshot.updatedAt == null && !_snapshot.isLoading) {
-      unawaited(refreshNow());
     }
   }
 
@@ -351,7 +427,7 @@ final notificationsRealtimeServiceProvider =
       final service = NotificationsRealtimeService(
         repoGetter: () => ref.read(notificationRepositoryProvider),
         sessionGetter: () => ref.read(appSessionProvider),
-        enableInternalTimer: false,
+        enableInternalTimer: true,
       );
       ref.onDispose(service.dispose);
       return service;
@@ -374,17 +450,35 @@ final notificationsUnreadCountStreamProvider = StreamProvider.autoDispose<int>((
 final notificationsRealtimeBootstrapProvider = Provider<void>((ref) {
   final service = ref.read(notificationsRealtimeServiceProvider);
 
+  String sessionSignature(AuthSessionState state) {
+    return [
+      state.status.name,
+      (state.role ?? '').trim().toLowerCase(),
+      (state.email ?? '').trim().toLowerCase(),
+      (state.displayName ?? '').trim(),
+    ].join('|');
+  }
+
   ref.listen<AuthSessionState>(
     authSessionControllerProvider.select((controller) => controller.state),
     (previous, next) {
       final wasAuthenticated =
           previous?.status == AuthSessionStatus.authenticated;
       final isAuthenticated = next.status == AuthSessionStatus.authenticated;
+      final identityChanged =
+          previous == null ||
+          sessionSignature(previous) != sessionSignature(next);
 
-      if (isAuthenticated && !wasAuthenticated) {
-        unawaited(service.prime());
-      } else if (!isAuthenticated && wasAuthenticated) {
+      if (!isAuthenticated && wasAuthenticated) {
         service.clear();
+        return;
+      }
+
+      if (isAuthenticated && (!wasAuthenticated || identityChanged)) {
+        if (identityChanged) {
+          service.clear();
+        }
+        unawaited(service.prime());
       }
     },
   );

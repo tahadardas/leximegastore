@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -99,7 +99,7 @@ class _ProductCardState extends State<ProductCard>
     super.initState();
     _heartPulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 340),
+      duration: const Duration(milliseconds: 190),
     );
   }
 
@@ -112,8 +112,8 @@ class _ProductCardState extends State<ProductCard>
 
   List<String> get _images {
     final merged = <String>[
-      ...?widget.imageUrls,
       if ((widget.imageUrl ?? '').trim().isNotEmpty) widget.imageUrl!.trim(),
+      ...?widget.imageUrls,
     ];
 
     final dedup = <String>[];
@@ -177,10 +177,17 @@ class _ProductCardState extends State<ProductCard>
         final cardHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : 320.0;
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final isCompactCard = cardHeight <= 330 || textScale > 1.02;
         final imageLayout = _resolveImageLayout(
           cardWidth: constraints.maxWidth,
           viewportWidth: MediaQuery.sizeOf(context).width,
         );
+        final showBrandChip = hasBrand;
+        final showDescription =
+            !isCompactCard &&
+            (widget.descriptionSnippet ?? '').trim().isNotEmpty;
+        final showOldPrice = hasOffer && !isCompactCard;
 
         return SizedBox(
           height: cardHeight,
@@ -191,7 +198,7 @@ class _ProductCardState extends State<ProductCard>
             onTap: widget.onTap,
             child: AnimatedScale(
               scale: _pressed ? LexiMotion.tapScale : 1.0,
-              duration: LexiMotion.tap,
+              duration: const Duration(milliseconds: 110),
               curve: LexiMotion.standardCurve,
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -268,7 +275,7 @@ class _ProductCardState extends State<ProductCard>
                                 children: List.generate(images.length, (index) {
                                   final isActive = index == safeCurrentPage;
                                   return AnimatedContainer(
-                                    duration: const Duration(milliseconds: 180),
+                                    duration: const Duration(milliseconds: 110),
                                     margin: const EdgeInsets.symmetric(
                                       horizontal: 2,
                                     ),
@@ -290,119 +297,126 @@ class _ProductCardState extends State<ProductCard>
                         child: Padding(
                           padding: EdgeInsetsDirectional.fromSTEB(
                             LexiSpacing.s12,
-                            showSaleCountdown ? LexiSpacing.s8 : LexiSpacing.s8,
+                            LexiSpacing.s8,
                             LexiSpacing.s12,
-                            LexiSpacing.s12,
+                            isCompactCard ? LexiSpacing.s8 : LexiSpacing.s12,
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (showSaleCountdown)
-                                    Container(
-                                      margin: const EdgeInsets.only(
-                                        bottom: LexiSpacing.s8,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: LexiSpacing.s8,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: LexiColors.neutral100,
-                                        borderRadius: BorderRadius.circular(
-                                          LexiRadius.button,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (showSaleCountdown)
+                                      Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: LexiSpacing.s8,
                                         ),
-                                        border: Border.all(
-                                          color: LexiColors.neutral200,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: LexiSpacing.s8,
+                                          vertical: 6,
                                         ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const FaIcon(
-                                            FontAwesomeIcons.clock,
-                                            size: 12,
-                                            color: LexiColors.discountRed,
+                                        decoration: BoxDecoration(
+                                          color: LexiColors.neutral100,
+                                          borderRadius: BorderRadius.circular(
+                                            LexiRadius.button,
                                           ),
-                                          const SizedBox(width: 6),
-                                          Flexible(
-                                            child: LexiCountdownTimer(
-                                              endTime: widget.saleEndDate!,
-                                              boxColor: LexiColors.discountRed,
-                                              textStyle: LexiTypography.caption
-                                                  .copyWith(
-                                                    fontSize: 9,
-                                                    color: LexiColors.white,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
+                                          border: Border.all(
+                                            color: LexiColors.neutral200,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const FaIcon(
+                                              FontAwesomeIcons.clock,
+                                              size: 12,
+                                              color: LexiColors.discountRed,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: LexiCountdownTimer(
+                                                endTime: widget.saleEndDate!,
+                                                boxColor:
+                                                    LexiColors.discountRed,
+                                                textStyle: LexiTypography
+                                                    .caption
+                                                    .copyWith(
+                                                      fontSize: 9,
+                                                      color: LexiColors.white,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  if (hasBrand)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: _BrandBadge(
-                                        label: normalizedBrandName,
-                                        onTap: widget.onBrandTap != null
-                                            ? _handleBrandTap
-                                            : null,
+                                    if (showBrandChip)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 6,
+                                        ),
+                                        child: _BrandBadge(
+                                          label: normalizedBrandName,
+                                          compact: isCompactCard,
+                                          onTap: widget.onBrandTap != null
+                                              ? _handleBrandTap
+                                              : null,
+                                        ),
                                       ),
-                                    ),
-                                  Text(
-                                    widget.name,
-                                    style: LexiTypography.title.copyWith(
-                                      fontSize: 14,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if ((widget.descriptionSnippet ?? '')
-                                      .trim()
-                                      .isNotEmpty) ...[
-                                    const SizedBox(height: LexiSpacing.s4),
                                     Text(
-                                      widget.descriptionSnippet!.trim(),
-                                      style: LexiTypography.caption,
-                                      maxLines: 1,
+                                      widget.name,
+                                      style: LexiTypography.title.copyWith(
+                                        fontSize: isCompactCard ? 13 : 14,
+                                      ),
+                                      maxLines: isCompactCard ? 1 : 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                  ],
-                                  const SizedBox(height: 1),
-                                  Row(
-                                    children: [
-                                      const FaIcon(
-                                        FontAwesomeIcons.solidStar,
-                                        size: 12,
-                                        color: LexiColors.warning,
-                                      ),
-                                      const SizedBox(width: LexiSpacing.s4),
+                                    if (showDescription) ...[
+                                      const SizedBox(height: LexiSpacing.s4),
                                       Text(
-                                        widget.rating.toStringAsFixed(1),
-                                        style: LexiTypography.caption.copyWith(
-                                          color: LexiColors.darkBlack,
-                                        ),
-                                      ),
-                                      const SizedBox(width: LexiSpacing.s4),
-                                      Flexible(
-                                        child: Text(
-                                          '(${widget.reviewsCount})',
-                                          style: LexiTypography.caption,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                        widget.descriptionSnippet!.trim(),
+                                        style: LexiTypography.caption,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
-                                  ),
-                                ],
+                                    const SizedBox(height: 1),
+                                    Row(
+                                      children: [
+                                        const FaIcon(
+                                          FontAwesomeIcons.solidStar,
+                                          size: 12,
+                                          color: LexiColors.warning,
+                                        ),
+                                        const SizedBox(width: LexiSpacing.s4),
+                                        Text(
+                                          widget.rating.toStringAsFixed(1),
+                                          style: LexiTypography.caption
+                                              .copyWith(
+                                                color: LexiColors.darkBlack,
+                                              ),
+                                        ),
+                                        const SizedBox(width: LexiSpacing.s4),
+                                        Flexible(
+                                          child: Text(
+                                            '(${widget.reviewsCount})',
+                                            style: LexiTypography.caption,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(height: 4),
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Expanded(
                                     child: Column(
@@ -414,12 +428,14 @@ class _ProductCardState extends State<ProductCard>
                                           widget.price,
                                           style: LexiTypography.priceStyle
                                               .copyWith(
-                                                fontSize: 16,
+                                                fontSize: isCompactCard
+                                                    ? 15
+                                                    : 16,
                                               ), // Slightly smaller
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (hasOffer)
+                                        if (showOldPrice)
                                           Text(
                                             widget.oldPrice!,
                                             style: LexiTypography.caption
@@ -444,6 +460,8 @@ class _ProductCardState extends State<ProductCard>
                                     onAdd: _handleAddToCartTap,
                                     onIncrement: widget.onIncrement,
                                     onDecrement: widget.onDecrement,
+                                    size: isCompactCard ? 34 : 38,
+                                    iconSize: isCompactCard ? 13 : 14,
                                   ),
                                 ],
                               ),
@@ -476,7 +494,7 @@ class _ProductCardState extends State<ProductCard>
   }
 
   void _scheduleSecondaryImagePrefetch(List<String> images) {
-    if (images.length <= 1) {
+    if (images.length <= 1 || kIsWeb) {
       return;
     }
 
@@ -494,8 +512,8 @@ class _ProductCardState extends State<ProductCard>
         ImagePrefetcher.prefetchSecondaryImages(
           context,
           images,
-          maxSecondary: 3,
-          staggerDelay: const Duration(milliseconds: 120),
+          maxSecondary: 1,
+          staggerDelay: const Duration(milliseconds: 220),
           memCacheWidth: widget.imageMemCacheWidth ?? 480,
         ),
       );
@@ -568,7 +586,7 @@ class _ProductCardState extends State<ProductCard>
     try {
       controller = AnimationController(
         vsync: this,
-        duration: const Duration(milliseconds: 620),
+        duration: const Duration(milliseconds: 320),
       );
       final curve = CurvedAnimation(
         parent: controller,
@@ -641,9 +659,10 @@ class _ProductCardState extends State<ProductCard>
 
 class _BrandBadge extends StatelessWidget {
   final String label;
+  final bool compact;
   final VoidCallback? onTap;
 
-  const _BrandBadge({required this.label, this.onTap});
+  const _BrandBadge({required this.label, this.compact = false, this.onTap});
 
   static const List<_BrandChipPalette> _palettes = <_BrandChipPalette>[
     _BrandChipPalette(
@@ -676,9 +695,17 @@ class _BrandBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = _paletteFor(label);
+    final maxWidth = compact ? 132.0 : 165.0;
+    final horizontalPad = compact ? 7.0 : 9.0;
+    final verticalPad = compact ? 3.0 : 4.0;
+    final iconSize = compact ? 7.0 : 8.0;
+    final fontSize = compact ? 9.3 : 10.5;
     final chip = Container(
-      constraints: const BoxConstraints(maxWidth: 165),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPad,
+        vertical: verticalPad,
+      ),
       decoration: BoxDecoration(
         color: palette.background,
         border: Border.all(color: palette.border, width: 1.1),
@@ -694,8 +721,12 @@ class _BrandBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FaIcon(FontAwesomeIcons.chevronLeft, size: 8, color: palette.accent),
-          const SizedBox(width: 6),
+          FaIcon(
+            FontAwesomeIcons.chevronLeft,
+            size: iconSize,
+            color: palette.accent,
+          ),
+          SizedBox(width: compact ? 4 : 6),
           Flexible(
             child: Text(
               label,
@@ -703,14 +734,18 @@ class _BrandBadge extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: LexiTypography.caption.copyWith(
                 color: palette.accent,
-                fontSize: 10.5,
+                fontSize: fontSize,
                 fontWeight: FontWeight.w900,
                 height: 1.05,
               ),
             ),
           ),
-          const SizedBox(width: 5),
-          FaIcon(FontAwesomeIcons.bagShopping, size: 8, color: palette.accent),
+          SizedBox(width: compact ? 4 : 5),
+          FaIcon(
+            FontAwesomeIcons.bagShopping,
+            size: iconSize,
+            color: palette.accent,
+          ),
         ],
       ),
     );

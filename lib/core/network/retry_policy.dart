@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class RetryPolicy {
@@ -14,6 +15,10 @@ class RetryPolicy {
     required RequestOptions request,
     required int attempt,
   }) {
+    if (_retryDisabled(request)) {
+      return false;
+    }
+
     if (attempt >= maxAttempts) {
       return false;
     }
@@ -38,7 +43,10 @@ class RetryPolicy {
     if (attemptNumber <= 1) {
       return const Duration(seconds: 1);
     }
-    return const Duration(seconds: 2);
+    if (attemptNumber == 2) {
+      return const Duration(seconds: 2);
+    }
+    return const Duration(seconds: 3);
   }
 
   bool _isTransientTransportError(DioException error) {
@@ -82,8 +90,15 @@ class RetryPolicy {
 
     return uri.path;
   }
+
+  bool _retryDisabled(RequestOptions request) {
+    final disabled = request.extra['disableRetry'];
+    return disabled is bool && disabled;
+  }
 }
 
 final retryPolicyProvider = Provider<RetryPolicy>((ref) {
-  return const RetryPolicy(maxAttempts: 2);
+  // Web requests can intermittently fail at the XHR/network layer.
+  // Allow one extra retry there without changing mobile behavior.
+  return RetryPolicy(maxAttempts: kIsWeb ? 3 : 2);
 });

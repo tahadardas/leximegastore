@@ -112,11 +112,11 @@ class _AddToCartButtonState extends State<AddToCartButton>
   }
 
   Widget _buildCounter() {
-    const double btnSize = 30;
-    const double counterHeight = 36;
+    final counterHeight = widget.size.clamp(32.0, 38.0);
+    final btnSize = (counterHeight - 4).clamp(26.0, 32.0);
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 140),
       switchInCurve: LexiMotion.standardCurve,
       child: Container(
         key: const ValueKey('cart_counter'),
@@ -159,7 +159,7 @@ class _AddToCartButtonState extends State<AddToCartButton>
               constraints: const BoxConstraints(minWidth: 24),
               alignment: Alignment.center,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
+                duration: const Duration(milliseconds: 110),
                 transitionBuilder: (child, anim) =>
                     ScaleTransition(scale: anim, child: child),
                 child: Text(

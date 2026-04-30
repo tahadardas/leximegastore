@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
@@ -301,7 +302,7 @@ class _ProductsListingPageState extends ConsumerState<ProductsListingPage>
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: IconButton(
                   onPressed: _applySearch,
-                  icon: const Icon(Icons.tune_rounded),
+                  icon: const Icon(Icons.search_rounded),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(LexiRadius.md),
@@ -457,9 +458,55 @@ class _ProductsListingPageState extends ConsumerState<ProductsListingPage>
     }
 
     if (state.items.isEmpty) {
-      return const Center(
-        child: Text(
-          '\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0646\u062a\u062c\u0627\u062a',
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: LexiSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: LexiColors.neutral200.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  FontAwesomeIcons.magnifyingGlass,
+                  size: 32,
+                  color: LexiColors.neutral400,
+                ),
+              ),
+              const SizedBox(height: LexiSpacing.lg),
+              Text(
+                'لا توجد منتجات مطابقة',
+                style: LexiTypography.h3.copyWith(color: LexiColors.darkBlack),
+              ),
+              const SizedBox(height: LexiSpacing.xs),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: LexiSpacing.xl),
+                child: Text(
+                  'حاول تغيير المسميات أو البحث عن شيء آخر لنتائج أفضل.',
+                  textAlign: TextAlign.center,
+                  style: LexiTypography.bodyMd.copyWith(
+                    color: LexiColors.neutral600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: LexiSpacing.xl),
+              ElevatedButton(
+                onPressed: _refreshProducts,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: LexiColors.brandPrimary,
+                  foregroundColor: LexiColors.darkBlack,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(LexiRadius.md),
+                  ),
+                ),
+                child: const Text('إعادة المحاولة'),
+              ),
+            ],
+          ),
         ),
       );
     }

@@ -49,9 +49,11 @@ abstract class InvoicePdfExporter {
     Order order, {
     String? invoiceType,
   }) async {
-    final boldFont = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/Amiri-Bold.ttf'),
-    );
+    final mainFontByteData = await rootBundle.load('assets/fonts/Amiri-Regular.ttf');
+    final mainFont = pw.Font.ttf(mainFontByteData);
+    
+    final boldFontByteData = await rootBundle.load('assets/fonts/Amiri-Bold.ttf');
+    final boldFont = pw.Font.ttf(boldFontByteData);
 
     final logo = await _loadLogo();
     final currency = _currencyCode(order);
@@ -74,9 +76,15 @@ abstract class InvoicePdfExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-        theme: pw.ThemeData.withFont(base: boldFont, bold: boldFont).copyWith(
+        theme: pw.ThemeData.withFont(
+          base: mainFont,
+          bold: boldFont,
+          italic: mainFont,
+          boldItalic: boldFont,
+        ).copyWith(
           defaultTextStyle: pw.TextStyle(
-            font: boldFont,
+            font: mainFont,
+            fontFallback: [mainFont, boldFont],
             fontSize: 12,
             color: _brandBlack,
           ),

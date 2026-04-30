@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/utils/safe_parsers.dart';
 import '../../../../core/utils/text_normalizer.dart';
 
 /// Notification type enum
@@ -54,22 +55,19 @@ class NotificationEntity {
   });
 
   factory NotificationEntity.fromJson(Map<String, dynamic> json) {
+    final createdAtRaw = (json['created_at'] ?? '').toString().trim();
+    final createdAt = _parseNotificationDate(createdAtRaw);
     return NotificationEntity(
-      id: json['id'] as int? ?? 0,
-      type: NotificationType.fromString(json['type'] as String? ?? ''),
+      id: parseInt(json['id']),
+      type: NotificationType.fromString((json['type'] ?? '').toString()),
       titleAr: TextNormalizer.normalize(json['title_ar']),
       bodyAr: TextNormalizer.normalize(json['body_ar']),
-      orderId: json['order_id'] as int?,
-      isRead: json['is_read'] as bool? ?? false,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(
-              !(json['created_at'] as String).endsWith('Z') &&
-                      !(json['created_at'] as String).contains('+')
-                  ? '${(json['created_at'] as String).replaceAll(' ', 'T')}Z'
-                  : json['created_at'] as String,
-            )
-          : DateTime.now(),
-      data: json['data'] as Map<String, dynamic>?,
+      orderId: parseIntNullable(json['order_id']),
+      isRead: parseBool(json['is_read']),
+      createdAt: createdAt,
+      data: json['data'] is Map
+          ? Map<String, dynamic>.from(json['data'] as Map)
+          : null,
     );
   }
 
@@ -152,10 +150,10 @@ class NotificationsPage {
       items: dataList
           .map((e) => NotificationEntity.fromJson(e as Map<String, dynamic>))
           .toList(),
-      page: meta['page'] as int? ?? 1,
-      perPage: meta['per_page'] as int? ?? 20,
-      total: meta['total'] as int? ?? 0,
-      unreadCount: meta['unread_count'] as int? ?? 0,
+      page: parseInt(meta['page']) > 0 ? parseInt(meta['page']) : 1,
+      perPage: parseInt(meta['per_page']) > 0 ? parseInt(meta['per_page']) : 20,
+      total: parseInt(meta['total']),
+      unreadCount: parseInt(meta['unread_count']),
     );
   }
 
@@ -164,4 +162,20 @@ class NotificationsPage {
 
   /// Whether there are more pages to load
   bool get hasMore => items.length < total;
+}
+
+DateTime _parseNotificationDate(String value) {
+  if (value.isEmpty) {
+    return DateTime.now();
+  }
+
+  final normalized = (!value.endsWith('Z') && !value.contains('+'))
+      ? '${value.replaceAll(' ', 'T')}Z'
+      : value;
+
+  try {
+    return DateTime.parse(normalized);
+  } catch (_) {
+    return DateTime.now();
+  }
 }

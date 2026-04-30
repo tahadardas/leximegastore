@@ -53,11 +53,11 @@ final categoriesControllerProvider =
 
 class CategoriesController
     extends AutoDisposeAsyncNotifier<List<CategoryEntity>> {
-  static const Duration _minimumLoadingDuration = Duration(milliseconds: 550);
+  static const Duration _minimumLoadingDuration = Duration(milliseconds: 250);
 
   @override
   Future<List<CategoryEntity>> build() async {
-    return _fetchWithMinimumDelay(preferCache: false);
+    return _fetchWithMinimumDelay(preferCache: true);
   }
 
   Future<List<CategoryEntity>> _fetch({required bool preferCache}) {

@@ -11,6 +11,7 @@ import '../core/network/network_status_monitor.dart';
 import '../core/notifications/firebase_push_service.dart';
 import '../core/auth/auth_session_controller.dart';
 import '../core/services/courier_location_tracker.dart';
+import '../features/notifications/data/notifications_realtime_service.dart';
 import '../core/security/app_lifecycle_observer.dart';
 import '../l10n/app_localizations.dart';
 
@@ -25,6 +26,7 @@ class LexiMegaStoreApp extends ConsumerWidget {
     ref.watch(appLifecycleObserverProvider); // registers lifecycle observer
     ref.watch(courierLocationTrackerProvider);
     ref.watch(shareDeepLinkBootstrapProvider);
+    ref.watch(notificationsRealtimeBootstrapProvider);
     ref.listen<AuthSessionState>(
       authSessionControllerProvider.select((controller) => controller.state),
       (previous, next) {

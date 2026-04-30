@@ -169,7 +169,7 @@ class _AccountLoginFormState extends ConsumerState<_AccountLoginForm>
             if (_errorText != null && _errorText!.trim().isNotEmpty)
               const SizedBox(height: LexiSpacing.sm),
             LexiInput(
-              label: 'البريد أو اسم المستخدم أو رقم الهاتف',
+              label: 'رقم الهاتف',
               hint: '09xxxxxxxx',
               controller: _identifierController,
               textInputAction: TextInputAction.next,

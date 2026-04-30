@@ -38,18 +38,11 @@ int _sortCategories(CategoryEntity a, CategoryEntity b) {
   return a.name.compareTo(b.name);
 }
 
-class CategoriesScreen extends ConsumerStatefulWidget {
+class CategoriesScreen extends ConsumerWidget {
   const CategoriesScreen({super.key});
 
   @override
-  ConsumerState<CategoriesScreen> createState() => _CategoriesScreenState();
-}
-
-class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
-  int? _expandedParentId;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesControllerProvider);
 
     return Scaffold(
@@ -70,66 +63,96 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                   ref.read(categoriesControllerProvider.notifier).refresh();
                 },
               ),
-              data: (categories) {
-                final mainCategories =
-                    categories.where((c) => c.parentId == 0).toList()
-                      ..sort(_sortCategories);
-                final childrenMap = buildChildrenMap(categories);
-
-                return RefreshIndicator(
-                  color: LexiColors.brandPrimary,
-                  onRefresh: () =>
-                      ref.read(categoriesControllerProvider.notifier).refresh(),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(LexiSpacing.md),
-                    itemCount: mainCategories.isEmpty
-                        ? 2
-                        : mainCategories.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return const _CategoriesHeaderBlock();
-                      }
-
-                      if (mainCategories.isEmpty) {
-                        return const _EmptyCategories();
-                      }
-
-                      final parent = mainCategories[index - 1];
-                      final children = childrenMap[parent.id] ?? const [];
-                      final isExpanded = _expandedParentId == parent.id;
-                      final hasChildren =
-                          children.isNotEmpty || parent.childrenCount > 0;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: LexiSpacing.sm),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CategoryParentTile(
-                              category: parent,
-                              hasChildren: hasChildren,
-                              isExpanded: isExpanded,
-                              onTap: () => _openCategory(parent),
-                              onArrowTap: hasChildren
-                                  ? () => _toggleExpand(parent.id)
-                                  : null,
-                            ),
-                            _AnimatedChildrenSection(
-                              isExpanded: isExpanded,
-                              children: children,
-                              expectedChildrenCount: parent.childrenCount,
-                              onChildTap: _openCategory,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
+              data: (categories) => _CategoriesList(
+                categories: categories,
+                onRefresh: () =>
+                    ref.read(categoriesControllerProvider.notifier).refresh(),
+                onCategoryTap: (category) => _openCategory(context, category),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openCategory(BuildContext context, CategoryEntity category) {
+    context.push(
+      '/categories/${category.id}/products?title=${Uri.encodeComponent(category.name)}',
+    );
+  }
+}
+
+class _CategoriesList extends StatefulWidget {
+  final List<CategoryEntity> categories;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<CategoryEntity> onCategoryTap;
+
+  const _CategoriesList({
+    required this.categories,
+    required this.onRefresh,
+    required this.onCategoryTap,
+  });
+
+  @override
+  State<_CategoriesList> createState() => _CategoriesListState();
+}
+
+class _CategoriesListState extends State<_CategoriesList> {
+  int? _expandedParentId;
+
+  @override
+  Widget build(BuildContext context) {
+    final mainCategories =
+        widget.categories.where((c) => c.parentId == 0).toList()
+          ..sort(_sortCategories);
+    final childrenMap = buildChildrenMap(widget.categories);
+
+    return RefreshIndicator(
+      color: LexiColors.brandPrimary,
+      onRefresh: widget.onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(LexiSpacing.md),
+        itemCount: mainCategories.isEmpty ? 2 : mainCategories.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return const _CategoriesHeaderBlock();
+          }
+
+          if (mainCategories.isEmpty) {
+            return const _EmptyCategories();
+          }
+
+          final parent = mainCategories[index - 1];
+          final children = childrenMap[parent.id] ?? const [];
+          final isExpanded = _expandedParentId == parent.id;
+          final hasChildren = children.isNotEmpty || parent.childrenCount > 0;
+
+          return Padding(
+            key: ValueKey<int>(parent.id),
+            padding: const EdgeInsets.only(bottom: LexiSpacing.sm),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CategoryParentTile(
+                  category: parent,
+                  hasChildren: hasChildren,
+                  isExpanded: isExpanded,
+                  onTap: () => widget.onCategoryTap(parent),
+                  onArrowTap: hasChildren
+                      ? () => _toggleExpand(parent.id)
+                      : null,
+                ),
+                _AnimatedChildrenSection(
+                  isExpanded: isExpanded,
+                  children: children,
+                  expectedChildrenCount: parent.childrenCount,
+                  onChildTap: widget.onCategoryTap,
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -138,12 +161,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     setState(() {
       _expandedParentId = _expandedParentId == parentId ? null : parentId;
     });
-  }
-
-  void _openCategory(CategoryEntity category) {
-    context.push(
-      '/categories/${category.id}/products?title=${Uri.encodeComponent(category.name)}',
-    );
   }
 }
 
@@ -259,52 +276,40 @@ class _AnimatedChildrenSection extends StatelessWidget {
     final showChildren =
         isExpanded && (children.isNotEmpty || expectedChildrenCount > 0);
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 260),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        return ClipRect(
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: animation.value,
-            child: child,
-          ),
-        );
-      },
-      child: !showChildren
-          ? const SizedBox.shrink()
-          : Padding(
-              key: const ValueKey<String>('expanded_children'),
-              padding: const EdgeInsetsDirectional.only(start: 26, top: 8),
-              child: children.isEmpty
-                  ? Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(LexiSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: LexiColors.neutral50,
-                        borderRadius: BorderRadius.circular(LexiRadius.md),
-                        border: Border.all(color: LexiColors.neutral200),
-                      ),
-                      child: Text(
-                        'لا توجد أقسام فرعية متاحة حالياً.',
-                        style: LexiTypography.bodySm.copyWith(
-                          color: LexiColors.neutral600,
-                        ),
-                      ),
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: children.map((child) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: CategoryChildTile(
-                            category: child,
-                            onTap: () => onChildTap(child),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+    if (!showChildren) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 26, top: 8),
+      child: children.isEmpty
+          ? Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(LexiSpacing.sm),
+              decoration: BoxDecoration(
+                color: LexiColors.neutral50,
+                borderRadius: BorderRadius.circular(LexiRadius.md),
+                border: Border.all(color: LexiColors.neutral200),
+              ),
+              child: Text(
+                'لا توجد أقسام فرعية متاحة حالياً.',
+                style: LexiTypography.bodySm.copyWith(
+                  color: LexiColors.neutral600,
+                ),
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: children.map((child) {
+                return Padding(
+                  key: ValueKey<int>(child.id),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: CategoryChildTile(
+                    category: child,
+                    onTap: () => onChildTap(child),
+                  ),
+                );
+              }).toList(),
             ),
     );
   }

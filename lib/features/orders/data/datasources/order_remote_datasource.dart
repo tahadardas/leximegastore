@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -5,11 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/constants/endpoints.dart';
+import '../../../../core/logging/app_logger.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/utils/order_number_utils.dart';
 import '../../../../core/utils/safe_parsers.dart';
 import '../../../../core/utils/text_normalizer.dart';
 import '../parsers/order_parsing.dart';
+import '../../domain/entities/invoice_document.dart';
 import '../../domain/entities/order.dart';
 import '../../domain/entities/order_track.dart';
 
@@ -61,7 +64,7 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
           options: Options(extra: const {'requiresAuth': false}),
         );
         return _resolveInvoiceResponse(response.data);
-      } on DioException catch (e) {
+      } on DioException catch (e, st) {
         lastError = e;
         final canRetry = !isLast && _canTryInvoiceFallback(e);
         if (kDebugMode && canRetry) {
@@ -70,6 +73,14 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
           );
         }
         if (!canRetry) {
+          _logCriticalInvoiceFailure(
+            orderId: orderId,
+            requestedType: type,
+            attemptedType: candidateType,
+            hasPhone: normalizedPhone.isNotEmpty,
+            error: e,
+            stackTrace: st,
+          );
           rethrow;
         }
       }
@@ -84,18 +95,18 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
   List<String> _invoiceTypeAttempts(String rawType) {
     final normalized = rawType.trim().toLowerCase();
     if (normalized.isEmpty) {
-      return const ['final'];
+      return const ['provisional'];
     }
 
     final attempts = <String>[normalized];
-    if (normalized == 'provisional') {
+    if (normalized == 'final') {
+      attempts.add('provisional');
+    } else if (normalized == 'provisional') {
       attempts.add('proforma');
-      attempts.add('final');
     } else if (normalized == 'proforma') {
       attempts.add('provisional');
-      attempts.add('final');
-    } else if (normalized != 'final') {
-      attempts.add('final');
+    } else {
+      attempts.add('provisional');
     }
 
     return attempts.toSet().toList(growable: false);
@@ -104,6 +115,12 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
   bool _canTryInvoiceFallback(DioException error) {
     final status = error.response?.statusCode;
     if (status != null) {
+      if (status == 403) {
+        return _isInvoiceNotReady(error);
+      }
+      if (_isInvoiceAccessInputError(error)) {
+        return false;
+      }
       return status == 400 || status == 404 || status == 405 || status == 422;
     }
 
@@ -117,15 +134,109 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
     };
   }
 
+  bool _isInvoiceAccessInputError(DioException error) {
+    final payload = extractMap(error.response?.data);
+    final errorBody = extractMap(payload['error']);
+    final code = (errorBody['code'] ?? payload['code'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return code == 'phone_required' || code == 'phone_mismatch';
+  }
+
+  bool _isInvoiceNotReady(DioException error) {
+    final payload = extractMap(error.response?.data);
+    final errorBody = extractMap(payload['error']);
+    final code = (errorBody['code'] ?? payload['code'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (code == 'invoice_not_ready') {
+      return true;
+    }
+
+    final message = (errorBody['message'] ?? payload['message'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return message.contains('invoice_not_ready') ||
+        message.contains('final invoice') ||
+        message.contains('الفاتورة النهائية');
+  }
+
+  void _logCriticalInvoiceFailure({
+    required String orderId,
+    required String requestedType,
+    required String attemptedType,
+    required bool hasPhone,
+    required DioException error,
+    required StackTrace stackTrace,
+  }) {
+    if (!_isCriticalInvoiceFailure(error)) {
+      return;
+    }
+
+    unawaited(
+      AppLogger.error(
+        'Invoice request failed',
+        error,
+        stackTrace,
+        extra: {
+          'order_id': orderId,
+          'requested_type': requestedType,
+          'attempted_type': attemptedType,
+          'status_code': error.response?.statusCode,
+          'error_type': error.type.name,
+          'has_phone': hasPhone,
+        },
+      ),
+    );
+  }
+
+  bool _isCriticalInvoiceFailure(DioException error) {
+    final status = error.response?.statusCode;
+    if (status == null) {
+      return switch (error.type) {
+        DioExceptionType.connectionError => true,
+        DioExceptionType.connectionTimeout => true,
+        DioExceptionType.sendTimeout => true,
+        DioExceptionType.receiveTimeout => true,
+        DioExceptionType.badCertificate => true,
+        _ => false,
+      };
+    }
+    return status >= 500;
+  }
+
   Future<dynamic> _resolveInvoiceResponse(dynamic responseData) async {
     final invoicePayload = extractMap(responseData);
     final invoiceUrl =
         (invoicePayload['invoice_url'] ?? invoicePayload['url'] ?? '')
             .toString()
             .trim();
+    final invoiceOrder = _extractInvoiceOrder(invoicePayload);
+    final invoiceType = (invoicePayload['invoice_type'] ?? '')
+        .toString()
+        .trim();
+    final verificationUrl =
+        (invoicePayload['verification_url'] ??
+                invoicePayload['invoice_verification_url'] ??
+                '')
+            .toString()
+            .trim();
 
     if (invoiceUrl.isEmpty) {
       throw const FormatException('رابط الفاتورة غير متوفر.');
+    }
+
+    InvoiceDocument buildDocument(dynamic content) {
+      return InvoiceDocument(
+        content: content,
+        order: invoiceOrder,
+        invoiceType: invoiceType,
+        invoiceUrl: invoiceUrl,
+        verificationUrl: verificationUrl,
+      );
     }
 
     try {
@@ -140,9 +251,9 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
       final rawBytes = invoiceResponse.data;
       if (rawBytes is String) {
         if (rawBytes.trim().isNotEmpty) {
-          return TextNormalizer.normalize(rawBytes);
+          return buildDocument(TextNormalizer.normalize(rawBytes));
         }
-        return invoiceUrl;
+        return buildDocument(invoiceUrl);
       }
 
       final bytes = rawBytes is List<int>
@@ -154,7 +265,7 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
           .toLowerCase();
 
       if (contentType.contains('application/pdf')) {
-        return bytes;
+        return buildDocument(bytes);
       }
 
       try {
@@ -162,27 +273,43 @@ class OrderRemoteDatasourceImpl implements OrderRemoteDatasource {
           utf8.decode(bytes, allowMalformed: true),
         );
         if (html.trim().isNotEmpty) {
-          return html;
+          return buildDocument(html);
         }
       } catch (_) {
         try {
           final html = TextNormalizer.normalize(latin1.decode(bytes));
           if (html.trim().isNotEmpty) {
-            return html;
+            return buildDocument(html);
           }
         } catch (_) {
           // ignore and fallback
         }
       }
 
-      return invoiceUrl;
+      return buildDocument(invoiceUrl);
     } on DioException catch (e) {
       if (kDebugMode) {
         debugPrint(
           '[Invoice][WARN] fallback to url: $invoiceUrl | ${e.message}',
         );
       }
-      return invoiceUrl;
+      return buildDocument(invoiceUrl);
+    }
+  }
+
+  Order? _extractInvoiceOrder(Map<String, dynamic> invoicePayload) {
+    final orderPayload = extractMap(invoicePayload['order']);
+    if (orderPayload.isEmpty) {
+      return null;
+    }
+
+    try {
+      return Order.fromJson(orderPayload);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[Invoice][WARN] unable to parse embedded order: $e\n$st');
+      }
+      return null;
     }
   }
 

@@ -16,7 +16,16 @@ import '../models/product_model.dart';
 class ProductRemoteDatasource {
   final DioClient _client;
   final CacheStore _cacheStore;
+  static const String _listMediaCacheVersion = 'media_v2';
+  static const String _storeProductsPath = '/wp-json/wc/store/v1/products';
+  static const Duration _detailsMemoryCacheTtl = Duration(minutes: 10);
   static final Map<String, int> _slugToIdMemoryCache = <String, int>{};
+  static final Map<String, _ProductDetailsMemoryEntry>
+  _productDetailsMemoryCache = <String, _ProductDetailsMemoryEntry>{};
+  final Map<String, Future<ProductListResponse>> _listInFlight =
+      <String, Future<ProductListResponse>>{};
+  final Map<String, Future<ProductModel>> _detailsInFlight =
+      <String, Future<ProductModel>>{};
 
   ProductRemoteDatasource({
     required DioClient client,
@@ -65,54 +74,16 @@ class ProductRemoteDatasource {
       sort: sort,
     );
 
-    final cached = await _cacheStore.readJson(cacheKey);
-    if (preferCache && cached != null) {
-      final cachedResult = _parseProductList(
-        cached.data['payload'],
-        requestedPage: page,
-        requestedPerPage: perPage,
-        fromCache: true,
-        cachedAt: cached.savedAt,
-        requiredCategoryId: categoryId,
-        requiredBrandId: brandId,
-        requiredBrandName: normalizedBrandName,
-      );
-
-      // Do not short-circuit on empty cache payloads. They can be stale or from
-      // an older response shape and would incorrectly render "no products".
-      if (cachedResult.products.isNotEmpty) {
-        unawaited(
-          _refreshProductsSilently(
-            cacheKey: cacheKey,
-            queryParams: queryParams,
-          ),
-        );
-        return cachedResult;
-      }
+    final inFlightKey = 'list:$cacheKey|prefer:${preferCache ? 1 : 0}';
+    final existingRequest = _listInFlight[inFlightKey];
+    if (existingRequest != null) {
+      return existingRequest;
     }
 
-    try {
-      final response = await _client.get(
-        Endpoints.productsPath,
-        queryParameters: queryParams,
-        options: Options(extra: const {'requiresAuth': false}),
-      );
-
-      await _cacheStore.saveJson(cacheKey, {
-        'payload': _jsonSafe(response.data),
-      }, DateTime.now());
-
-      return _parseProductList(
-        response.data,
-        requestedPage: page,
-        requestedPerPage: perPage,
-        requiredCategoryId: categoryId,
-        requiredBrandId: brandId,
-        requiredBrandName: normalizedBrandName,
-      );
-    } catch (_) {
-      if (cached != null) {
-        return _parseProductList(
+    final request = () async {
+      final cached = await _cacheStore.readJson(cacheKey);
+      if (preferCache && cached != null) {
+        final cachedResult = _parseProductList(
           cached.data['payload'],
           requestedPage: page,
           requestedPerPage: perPage,
@@ -122,9 +93,93 @@ class ProductRemoteDatasource {
           requiredBrandId: brandId,
           requiredBrandName: normalizedBrandName,
         );
+
+        // Do not short-circuit on empty cache payloads. They can be stale or from
+        // an older response shape and would incorrectly render "no products".
+        if (cachedResult.products.isNotEmpty) {
+          unawaited(
+            _refreshProductsSilently(
+              cacheKey: cacheKey,
+              queryParams: queryParams,
+            ),
+          );
+          return cachedResult;
+        }
       }
-      rethrow;
-    }
+
+      try {
+        final response = await _client.get(
+          Endpoints.productsPath,
+          queryParameters: queryParams,
+          options: Options(
+            extra: const <String, dynamic>{'requiresAuth': false},
+          ),
+        );
+
+        await _cacheStore.saveJson(cacheKey, {
+          'payload': _jsonSafe(response.data),
+        }, DateTime.now());
+
+        return _parseProductList(
+          response.data,
+          requestedPage: page,
+          requestedPerPage: perPage,
+          requiredCategoryId: categoryId,
+          requiredBrandId: brandId,
+          requiredBrandName: normalizedBrandName,
+        );
+      } catch (error, stackTrace) {
+        if (_canUseStoreApiFallback(error)) {
+          try {
+            final fallbackPayload = await _fetchProductsFromStoreApi(
+              page: page,
+              perPage: perPage,
+              search: search,
+              categoryId: categoryId,
+              brandId: brandId,
+              brandName: normalizedBrandName,
+              sort: sort,
+            );
+
+            await _cacheStore.saveJson(cacheKey, {
+              'payload': _jsonSafe(fallbackPayload),
+            }, DateTime.now());
+
+            return _parseProductList(
+              fallbackPayload,
+              requestedPage: page,
+              requestedPerPage: perPage,
+              requiredCategoryId: categoryId,
+              requiredBrandId: brandId,
+              requiredBrandName: normalizedBrandName,
+            );
+          } catch (_) {
+            // Fall back to the normal cache/error path below.
+          }
+        }
+
+        if (cached != null) {
+          return _parseProductList(
+            cached.data['payload'],
+            requestedPage: page,
+            requestedPerPage: perPage,
+            fromCache: true,
+            cachedAt: cached.savedAt,
+            requiredCategoryId: categoryId,
+            requiredBrandId: brandId,
+            requiredBrandName: normalizedBrandName,
+          );
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+    }();
+
+    _listInFlight[inFlightKey] = request;
+    return request.whenComplete(() {
+      if (identical(_listInFlight[inFlightKey], request)) {
+        _listInFlight.remove(inFlightKey);
+      }
+    });
   }
 
   Future<ProductListResponse> getProducts({
@@ -154,57 +209,118 @@ class ProductRemoteDatasource {
     String id, {
     bool preferCache = true,
   }) async {
-    final cacheKey = CachePolicy.key(CacheKey.productDetails, suffix: 'id_$id');
-    final cached = await _cacheStore.readJson(cacheKey);
-
-    if (preferCache && cached != null) {
-      unawaited(_refreshProductDetailsSilently(id, cacheKey));
-      final item = _extractItem(cached.data['payload']);
-      if (item != null) {
-        return ProductModel.fromJson(item);
-      }
+    final normalizedId = id.trim();
+    final cacheKey = CachePolicy.key(
+      CacheKey.productDetails,
+      suffix: 'id_$normalizedId',
+    );
+    final inFlightKey = 'details:$normalizedId|prefer:${preferCache ? 1 : 0}';
+    final existingRequest = _detailsInFlight[inFlightKey];
+    if (existingRequest != null) {
+      return existingRequest;
     }
 
-    try {
-      final response = await _client.get(
-        Endpoints.productById(id),
-        options: Options(extra: const {'requiresAuth': false}),
-      );
+    final request = () async {
+      if (preferCache) {
+        final memoryCached = _readProductDetailsMemory(normalizedId);
+        if (memoryCached != null) {
+          unawaited(_refreshProductDetailsSilently(normalizedId, cacheKey));
+          return memoryCached;
+        }
+      }
 
-      await _cacheStore.saveJson(cacheKey, {
-        'payload': _jsonSafe(response.data),
-      }, DateTime.now());
+      final cached = await _cacheStore.readJson(cacheKey);
 
-      final item = _extractItem(response.data);
-      if (item == null) {
-        _logParseError(
-          where: 'product/$id',
-          error: 'Unable to resolve product object from response',
-          payload: response.data,
-        );
-        throw const FormatException('Invalid product response shape');
+      if (preferCache && cached != null) {
+        unawaited(_refreshProductDetailsSilently(normalizedId, cacheKey));
+        final item = _extractItem(cached.data['payload']);
+        if (item != null) {
+          try {
+            final model = ProductModel.fromJson(item);
+            _saveProductDetailsMemory(model);
+            return model;
+          } catch (e, st) {
+            _logParseError(
+              where: 'product/$normalizedId/cache',
+              error: e,
+              stackTrace: st,
+              payload: item,
+            );
+          }
+        }
       }
 
       try {
-        return ProductModel.fromJson(item);
-      } catch (e, st) {
-        _logParseError(
-          where: 'product/$id',
-          error: e,
-          stackTrace: st,
-          payload: item,
+        final response = await _client.get(
+          Endpoints.productById(normalizedId),
+          options: Options(extra: const {'requiresAuth': false}),
         );
-        rethrow;
-      }
-    } catch (_) {
-      if (cached != null) {
-        final item = _extractItem(cached.data['payload']);
-        if (item != null) {
-          return ProductModel.fromJson(item);
+
+        await _cacheStore.saveJson(cacheKey, {
+          'payload': _jsonSafe(response.data),
+        }, DateTime.now());
+
+        final item = _extractItem(response.data);
+        if (item == null) {
+          _logParseError(
+            where: 'product/$normalizedId',
+            error: 'Unable to resolve product object from response',
+            payload: response.data,
+          );
+          throw const FormatException('Invalid product response shape');
         }
+
+        try {
+          final model = ProductModel.fromJson(item);
+          _saveProductDetailsMemory(model);
+          return model;
+        } catch (e, st) {
+          _logParseError(
+            where: 'product/$normalizedId',
+            error: e,
+            stackTrace: st,
+            payload: item,
+          );
+          rethrow;
+        }
+      } catch (error, stackTrace) {
+        if (_canUseStoreApiFallback(error)) {
+          try {
+            final response = await _client.get(
+              '$_storeProductsPath/$normalizedId',
+              options: Options(extra: const {'requiresAuth': false}),
+            );
+            await _cacheStore.saveJson(cacheKey, {
+              'payload': _jsonSafe(response.data),
+            }, DateTime.now());
+            final model = ProductModel.fromJson(
+              Map<String, dynamic>.from(response.data),
+            );
+            _saveProductDetailsMemory(model);
+            return model;
+          } catch (_) {
+            // Fall back to cached custom payload if present.
+          }
+        }
+
+        if (cached != null) {
+          final item = _extractItem(cached.data['payload']);
+          if (item != null) {
+            final model = ProductModel.fromJson(item);
+            _saveProductDetailsMemory(model);
+            return model;
+          }
+        }
+        Error.throwWithStackTrace(error, stackTrace);
       }
-      rethrow;
-    }
+    }();
+
+    _detailsInFlight[inFlightKey] = request;
+    return request.whenComplete(() {
+      if (identical(_detailsInFlight[inFlightKey], request)) {
+        _detailsInFlight.remove(inFlightKey);
+      }
+    });
   }
 
   Future<int?> resolveProductIdBySlug(String slug) async {
@@ -272,25 +388,9 @@ class ProductRemoteDatasource {
       }
 
       final itemMap = Map<String, dynamic>.from(item);
-      if (requiredCategoryId != null &&
-          requiredCategoryId > 0 &&
-          !_itemBelongsToCategory(itemMap, requiredCategoryId)) {
-        continue;
-      }
-      if (requiredBrandId != null &&
-          requiredBrandId > 0 &&
-          !_itemBelongsToBrand(itemMap, requiredBrandId)) {
-        continue;
-      }
-      final shouldFilterByBrandName =
-          (requiredBrandId == null || requiredBrandId <= 0) &&
-          requiredBrandName != null &&
-          requiredBrandName.trim().isNotEmpty;
-      final normalizedRequiredBrandName = requiredBrandName ?? '';
-      if (shouldFilterByBrandName &&
-          !_itemBelongsToBrandName(itemMap, normalizedRequiredBrandName)) {
-        continue;
-      }
+      // We trust the API to return the correct items for the requested category/brand.
+      // Strict client-side filtering here breaks hierarchical categories where
+      // products in subcategories should be visible under the parent category.
 
       try {
         products.add(ProductModel.fromJson(itemMap));
@@ -304,6 +404,12 @@ class ProductRemoteDatasource {
       }
     }
 
+    final effectiveProducts = _applyRequestedBrandFilter(
+      products,
+      requiredBrandId: requiredBrandId,
+      requiredBrandName: requiredBrandName,
+    );
+
     final meta = _extractMeta(payload);
     final total = parseInt(meta['total']);
     final totalPages = parseInt(meta['total_pages']);
@@ -315,11 +421,12 @@ class ProductRemoteDatasource {
     final resolvedTotalPages = totalPages > 0 ? totalPages : 0;
     final hasMore = resolvedTotalPages > 0
         ? resolvedPage < resolvedTotalPages
-        : products.length >= resolvedPerPage;
+        : effectiveProducts.length >= resolvedPerPage;
+    _saveProductDetailsMemoryBulk(effectiveProducts);
 
     return ProductListResponse(
-      products: products,
-      total: total > 0 ? total : products.length,
+      products: effectiveProducts,
+      total: total > 0 ? total : effectiveProducts.length,
       totalPages: resolvedTotalPages > 0 ? resolvedTotalPages : 1,
       currentPage: resolvedPage,
       perPage: resolvedPerPage,
@@ -329,118 +436,57 @@ class ProductRemoteDatasource {
     );
   }
 
-  bool _itemBelongsToCategory(Map<String, dynamic> item, int categoryId) {
-    final rawCategoryIds = item['category_ids'];
-    if (rawCategoryIds is List) {
-      for (final rawId in rawCategoryIds) {
-        if (parseInt(rawId) == categoryId) {
-          return true;
-        }
-      }
+  List<ProductModel> _applyRequestedBrandFilter(
+    List<ProductModel> products, {
+    int? requiredBrandId,
+    String? requiredBrandName,
+  }) {
+    if (products.isEmpty) {
+      return products;
     }
 
-    final rawCategories = item['categories'];
-    if (rawCategories is List) {
-      for (final rawCategory in rawCategories) {
-        if (rawCategory is Map) {
-          if (parseInt(rawCategory['id']) == categoryId) {
+    final expectedBrandId = requiredBrandId ?? 0;
+    final expectedBrandName = TextNormalizer.normalize(
+      requiredBrandName,
+    ).toLowerCase();
+    if (expectedBrandId <= 0 && expectedBrandName.isEmpty) {
+      return products;
+    }
+
+    final hasBrandSignals = products.any(
+      (product) =>
+          (product.brandId ?? 0) > 0 || product.brandName.trim().isNotEmpty,
+    );
+    if (!hasBrandSignals) {
+      return products;
+    }
+
+    final matches = products
+        .where((product) {
+          if (expectedBrandId > 0 && product.brandId == expectedBrandId) {
             return true;
           }
-          continue;
-        }
-        if (parseInt(rawCategory) == categoryId) {
-          return true;
-        }
-      }
-    }
 
-    return false;
-  }
-
-  bool _itemBelongsToBrand(Map<String, dynamic> item, int brandId) {
-    if (parseInt(item['brand_id']) == brandId) {
-      return true;
-    }
-
-    bool containsBrandId(dynamic value) {
-      if (value == null) return false;
-
-      if (value is List) {
-        for (final item in value) {
-          if (containsBrandId(item)) {
-            return true;
+          if (expectedBrandName.isEmpty) {
+            return false;
           }
-        }
-        return false;
-      }
 
-      if (value is Map) {
-        final map = Map<String, dynamic>.from(value);
-        if (parseInt(map['id']) == brandId ||
-            parseInt(map['term_id']) == brandId ||
-            parseInt(map['brand_id']) == brandId) {
-          return true;
-        }
-        return false;
-      }
-
-      return parseInt(value) == brandId;
-    }
-
-    return containsBrandId(item['brand']) || containsBrandId(item['brands']);
-  }
-
-  bool _itemBelongsToBrandName(Map<String, dynamic> item, String brandName) {
-    final normalizedTarget = brandName.trim().toLowerCase();
-    if (normalizedTarget.isEmpty) {
-      return true;
-    }
-
-    bool containsBrandName(dynamic value) {
-      if (value == null) {
-        return false;
-      }
-      if (value is List) {
-        for (final entry in value) {
-          if (containsBrandName(entry)) {
-            return true;
+          final actualBrandName = TextNormalizer.normalize(
+            product.brandName,
+          ).toLowerCase();
+          if (actualBrandName.isEmpty) {
+            return false;
           }
-        }
-        return false;
-      }
-      if (value is Map) {
-        final map = Map<String, dynamic>.from(value);
-        final candidates = <String>[
-          (map['name'] ?? '').toString(),
-          (map['title'] ?? '').toString(),
-          (map['label'] ?? '').toString(),
-          (map['brand_name'] ?? '').toString(),
-          (map['slug'] ?? '').toString(),
-        ];
-        for (final candidate in candidates) {
-          final normalized = candidate.trim().toLowerCase();
-          if (normalized.isNotEmpty &&
-              (normalized == normalizedTarget ||
-                  normalized.contains(normalizedTarget) ||
-                  normalizedTarget.contains(normalized))) {
-            return true;
-          }
-        }
-        return false;
-      }
 
-      final normalized = value.toString().trim().toLowerCase();
-      if (normalized.isEmpty) {
-        return false;
-      }
-      return normalized == normalizedTarget ||
-          normalized.contains(normalizedTarget) ||
-          normalizedTarget.contains(normalized);
-    }
+          return actualBrandName == expectedBrandName ||
+              actualBrandName.contains(expectedBrandName) ||
+              expectedBrandName.contains(actualBrandName);
+        })
+        .toList(growable: false);
 
-    return containsBrandName(item['brand']) ||
-        containsBrandName(item['brands']) ||
-        containsBrandName(item['brand_name']);
+    // If we cannot confidently match any row, keep the original payload
+    // to avoid empty-result regressions on inconsistent backend data.
+    return matches.isEmpty ? products : matches;
   }
 
   Future<void> _refreshProductsSilently({
@@ -451,7 +497,7 @@ class ProductRemoteDatasource {
       final response = await _client.get(
         Endpoints.productsPath,
         queryParameters: queryParams,
-        options: Options(extra: const {'requiresAuth': false}),
+        options: Options(extra: const <String, dynamic>{'requiresAuth': false}),
       );
 
       await _cacheStore.saveJson(cacheKey, {
@@ -460,6 +506,109 @@ class ProductRemoteDatasource {
     } catch (_) {
       // Keep stale cache when background refresh fails.
     }
+  }
+
+  Future<Map<String, dynamic>> _fetchProductsFromStoreApi({
+    required int page,
+    required int perPage,
+    required String? search,
+    required int? categoryId,
+    required int? brandId,
+    required String? brandName,
+    required String? sort,
+  }) async {
+    final queryParams = _buildStoreApiQueryParams(
+      page: page,
+      perPage: perPage,
+      search: search,
+      categoryId: categoryId,
+      brandId: brandId,
+      brandName: brandName,
+      sort: sort,
+    );
+
+    final response = await _client.get(
+      _storeProductsPath,
+      queryParameters: queryParams,
+      options: Options(extra: const <String, dynamic>{'requiresAuth': false}),
+    );
+
+    final items = extractList(response.data);
+    final total = parseInt(response.headers.value('x-wp-total'));
+    final totalPages = parseInt(response.headers.value('x-wp-totalpages'));
+
+    return <String, dynamic>{
+      'items': items,
+      'page': page,
+      'per_page': perPage,
+      'total': total > 0 ? total : items.length,
+      'total_pages': totalPages > 0 ? totalPages : 1,
+      'has_more': totalPages > 0 ? page < totalPages : items.length >= perPage,
+      'source': 'woocommerce_store_api',
+    };
+  }
+
+  Map<String, dynamic> _buildStoreApiQueryParams({
+    required int page,
+    required int perPage,
+    required String? search,
+    required int? categoryId,
+    required int? brandId,
+    required String? brandName,
+    required String? sort,
+  }) {
+    final query = <String, dynamic>{'page': page, 'per_page': perPage};
+
+    final normalizedSearch = (search ?? '').trim();
+    final normalizedBrandName = (brandName ?? '').trim();
+    if (normalizedSearch.isNotEmpty) {
+      query['search'] = normalizedSearch;
+    } else if ((brandId ?? 0) <= 0 && normalizedBrandName.isNotEmpty) {
+      query['search'] = normalizedBrandName;
+    }
+
+    if ((categoryId ?? 0) > 0) {
+      query['category'] = categoryId;
+    }
+    if ((brandId ?? 0) > 0) {
+      query['brand'] = brandId;
+    }
+
+    switch ((sort ?? '').trim().toLowerCase()) {
+      case 'price_asc':
+        query['orderby'] = 'price';
+        query['order'] = 'asc';
+        break;
+      case 'price_desc':
+        query['orderby'] = 'price';
+        query['order'] = 'desc';
+        break;
+      case 'top_rated':
+        query['orderby'] = 'rating';
+        query['order'] = 'desc';
+        break;
+      case 'best_selling':
+        query['orderby'] = 'popularity';
+        query['order'] = 'desc';
+        break;
+      case 'on_sale':
+      case 'flash_deals':
+        query['on_sale'] = true;
+        query['orderby'] = 'date';
+        query['order'] = 'desc';
+        break;
+      case 'manual':
+        query['orderby'] = 'menu_order';
+        query['order'] = 'asc';
+        break;
+      case 'newest':
+      default:
+        query['orderby'] = 'date';
+        query['order'] = 'desc';
+        break;
+    }
+
+    return query;
   }
 
   Future<void> _refreshProductDetailsSilently(
@@ -474,8 +623,66 @@ class ProductRemoteDatasource {
       await _cacheStore.saveJson(cacheKey, {
         'payload': _jsonSafe(response.data),
       }, DateTime.now());
+      final item = _extractItem(response.data);
+      if (item != null) {
+        try {
+          _saveProductDetailsMemory(ProductModel.fromJson(item));
+        } catch (_) {
+          // Ignore parse errors in background warm-up path.
+        }
+      }
     } catch (_) {
       // Keep stale cache when background refresh fails.
+    }
+  }
+
+  ProductModel? _readProductDetailsMemory(String id) {
+    final now = DateTime.now();
+    _evictExpiredProductDetailsMemory(now);
+    final entry = _productDetailsMemoryCache[id];
+    if (entry == null) {
+      return null;
+    }
+    if (entry.expiresAt.isBefore(now)) {
+      _productDetailsMemoryCache.remove(id);
+      return null;
+    }
+    return entry.model;
+  }
+
+  void _saveProductDetailsMemory(ProductModel model) {
+    if (model.id <= 0) {
+      return;
+    }
+    final now = DateTime.now();
+    _evictExpiredProductDetailsMemory(now);
+    _productDetailsMemoryCache['${model.id}'] = _ProductDetailsMemoryEntry(
+      model: model,
+      expiresAt: now.add(_detailsMemoryCacheTtl),
+    );
+  }
+
+  void _saveProductDetailsMemoryBulk(Iterable<ProductModel> products) {
+    final now = DateTime.now();
+    _evictExpiredProductDetailsMemory(now);
+    for (final model in products) {
+      if (model.id <= 0) {
+        continue;
+      }
+      _productDetailsMemoryCache['${model.id}'] = _ProductDetailsMemoryEntry(
+        model: model,
+        expiresAt: now.add(_detailsMemoryCacheTtl),
+      );
+    }
+  }
+
+  void _evictExpiredProductDetailsMemory(DateTime now) {
+    final expired = _productDetailsMemoryCache.entries
+        .where((entry) => entry.value.expiresAt.isBefore(now))
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    for (final key in expired) {
+      _productDetailsMemoryCache.remove(key);
     }
   }
 
@@ -529,7 +736,7 @@ class ProductRemoteDatasource {
           'per_page': 24,
           'search': normalizedSlug.replaceAll('-', ' '),
         },
-        options: Options(extra: const {'requiresAuth': false}),
+        options: Options(extra: const <String, dynamic>{'requiresAuth': false}),
       );
       final fromLexiSearch = _extractProductIdFromCollection(
         response.data,
@@ -543,6 +750,47 @@ class ProductRemoteDatasource {
     }
 
     return null;
+  }
+
+  bool _canUseStoreApiFallback(Object error) {
+    if (error is! DioException) {
+      return false;
+    }
+
+    final status = error.response?.statusCode ?? 0;
+    if (status == 404 || status == 405) {
+      return true;
+    }
+    if (status >= 500) {
+      return true;
+    }
+
+    if (status == 403 && _looksLikeHtmlErrorBody(error.response?.data)) {
+      return true;
+    }
+
+    if (status == 0) {
+      return switch (error.type) {
+        DioExceptionType.connectionError => true,
+        DioExceptionType.connectionTimeout => true,
+        DioExceptionType.receiveTimeout => true,
+        DioExceptionType.sendTimeout => true,
+        DioExceptionType.unknown => true,
+        _ => false,
+      };
+    }
+
+    return false;
+  }
+
+  bool _looksLikeHtmlErrorBody(dynamic body) {
+    final text = (body ?? '').toString().toLowerCase();
+    if (text.trim().isEmpty) {
+      return false;
+    }
+    return text.contains('<html') ||
+        text.contains('<!doctype html') ||
+        text.contains('<title>');
   }
 
   (CacheKey, String) _buildListCacheKey({
@@ -565,7 +813,7 @@ class ProductRemoteDatasource {
         : CacheKey.homeProducts;
 
     final suffix =
-        'category:${categoryId ?? 0}|brand:${brandId ?? 0}|brand_name:$normalizedBrandName|page:$page|per_page:$perPage|sort:${normalizedSort.isEmpty ? 'manual' : normalizedSort}|search:$normalizedSearch';
+        '$_listMediaCacheVersion|category:${categoryId ?? 0}|brand:${brandId ?? 0}|brand_name:$normalizedBrandName|page:$page|per_page:$perPage|sort:${normalizedSort.isEmpty ? 'manual' : normalizedSort}|search:$normalizedSearch';
 
     return (keyType, CachePolicy.key(keyType, suffix: suffix));
   }
@@ -711,6 +959,16 @@ class ProductRemoteDatasource {
       debugPrint('[API][PARSE][$where][STACK] $stackTrace');
     }
   }
+}
+
+class _ProductDetailsMemoryEntry {
+  final ProductModel model;
+  final DateTime expiresAt;
+
+  const _ProductDetailsMemoryEntry({
+    required this.model,
+    required this.expiresAt,
+  });
 }
 
 /// Wrapper for paginated product list responses.

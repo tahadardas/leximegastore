@@ -61,13 +61,31 @@ class ProductModel with _$ProductModel {
     /// Brand display name for this product if available.
     @JsonKey(name: 'brand_name') @Default('') String brandName,
 
+    /// Category ids used for home-feed diversity fallback.
+    @JsonKey(name: 'category_ids') @Default(<int>[]) List<int> categoryIds,
+
     /// Product type (simple, variable, etc.)
     @JsonKey(name: 'type') @Default('simple') String type,
+
+    /// Product publish/create timestamp (if available from API).
+    @JsonKey(name: 'created_at') DateTime? createdAt,
+
+    /// Historical sales count used for home ranking.
+    @JsonKey(name: 'total_sales') @Default(0) int salesCount,
+
+    /// Product views count used for home ranking.
+    @JsonKey(name: 'views') @Default(0) int viewsCount,
   }) = _ProductModel;
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     final type = (json['type'] ?? 'simple').toString().toLowerCase();
-    final saleRaw = json['sale_price'] ?? json['sale_min'];
+    final storePrices = json['prices'] is Map
+        ? Map<String, dynamic>.from(json['prices'] as Map)
+        : const <String, dynamic>{};
+    final saleRaw =
+        json['sale_price'] ??
+        json['sale_min'] ??
+        _storeApiPrice(storePrices, 'sale_price');
     final stockStatus = (json['stock_status'] ?? '').toString().toLowerCase();
     final parsedName = TextNormalizer.normalize(json['name']);
     final parsedDescription = TextNormalizer.normalize(json['description']);
@@ -81,23 +99,37 @@ class ProductModel with _$ProductModel {
       brandName: json['brand_name'],
     );
 
+    final legacyImageUrl =
+        json['image_url'] ??
+        json['imageUrl'] ??
+        json['thumbnail'] ??
+        json['src'];
     final parsedImages = _parseImageCollections(
       json['images'],
-      json['featured_image'],
-      json['image'],
+      json['featured_image'] ?? legacyImageUrl,
+      json['image'] ?? legacyImageUrl,
       json['card_images'],
     );
-    final parsedPrice = parseDouble(json['price'] ?? json['price_min']);
+    final parsedPrice = parseDouble(
+      json['price'] ??
+          json['price_min'] ??
+          _storeApiPrice(storePrices, 'price'),
+    );
     final parsedRegular = parseDouble(
-      json['regular_price'] ?? json['regular_min'] ?? json['price_max'],
+      json['regular_price'] ??
+          json['regular_min'] ??
+          json['price_max'] ??
+          _storeApiPrice(storePrices, 'regular_price'),
     );
     final parsedSale = _nullableDouble(saleRaw);
 
-    final salePrice = (parsedSale != null && parsedSale > 0)
-        ? parsedSale
-        : null;
+    var salePrice = (parsedSale != null && parsedSale > 0) ? parsedSale : null;
     var regularPrice = parsedRegular > 0 ? parsedRegular : 0.0;
     var price = parsedPrice > 0 ? parsedPrice : 0.0;
+
+    if (salePrice != null && regularPrice > 0 && salePrice >= regularPrice) {
+      salePrice = null;
+    }
 
     // When a valid sale price exists, ensure `price` reflects the discounted
     // amount. The API's `price` field sometimes equals `regular_price` even
@@ -135,18 +167,45 @@ class ProductModel with _$ProductModel {
       image: parsedImages.primary,
       images: parsedImages.detailImages,
       cardImages: parsedImages.cardImages,
-      rating: parseDouble(json['rating'] ?? json['rating_avg']),
-      reviewsCount: parseInt(
-        json['reviews_count'] ?? json['rating_count'] ?? json['review_count'],
+      rating: parseDouble(
+        json['rating'] ?? json['rating_avg'] ?? json['average_rating'],
       ),
-      inStock: parseBool(json['in_stock']) || stockStatus == 'instock',
+      reviewsCount: parseInt(
+        json['reviews_count'] ??
+            json['rating_count'] ??
+            json['review_count'] ??
+            json['reviews'],
+      ),
+      inStock:
+          parseBool(json['in_stock'] ?? json['is_in_stock']) ||
+          stockStatus == 'instock',
       description: parsedDescription,
       shortDescription: parsedShortDescription,
       dateOnSaleTo: parseIntNullable(json['date_on_sale_to']),
       wishlistCount: parseInt(json['wishlist_count']),
       brandId: brand.id,
       brandName: resolvedBrandName,
+      categoryIds: _parseCategoryIds(json['category_ids'], json['categories']),
       type: type,
+      createdAt: _parseDateTime(
+        json['created_at'] ??
+            json['date_created'] ??
+            json['createdAt'] ??
+            json['date'],
+      ),
+      salesCount: parseInt(
+        json['total_sales'] ??
+            json['sales_count'] ??
+            json['sales'] ??
+            json['sold_count'] ??
+            json['orders_count'],
+      ),
+      viewsCount: parseInt(
+        json['views'] ??
+            json['view_count'] ??
+            json['views_count'] ??
+            json['total_views'],
+      ),
     );
   }
 }
@@ -464,4 +523,86 @@ double? _nullableDouble(dynamic raw) {
   if (raw is String && raw.trim().isEmpty) return null;
   final value = parseDouble(raw);
   return value > 0 ? value : null;
+}
+
+double? _storeApiPrice(Map<String, dynamic> prices, String key) {
+  if (prices.isEmpty || !prices.containsKey(key)) {
+    return null;
+  }
+
+  final parsed = parseDouble(prices[key]);
+  if (parsed <= 0) {
+    return null;
+  }
+
+  final minorUnit = parseInt(prices['currency_minor_unit']);
+  if (minorUnit <= 0) {
+    return parsed;
+  }
+
+  var divisor = 1.0;
+  for (var i = 0; i < minorUnit; i++) {
+    divisor *= 10;
+  }
+  return parsed / divisor;
+}
+
+DateTime? _parseDateTime(dynamic raw) {
+  if (raw == null) {
+    return null;
+  }
+
+  if (raw is DateTime) {
+    return raw.toUtc();
+  }
+
+  if (raw is num) {
+    final timestamp = raw.toInt();
+    if (timestamp <= 0) {
+      return null;
+    }
+    // Heuristic: values above 1e12 are likely milliseconds.
+    final millis = timestamp > 1000000000000 ? timestamp : timestamp * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+  }
+
+  final text = raw.toString().trim();
+  if (text.isEmpty) {
+    return null;
+  }
+
+  final parsed = DateTime.tryParse(text);
+  return parsed?.toUtc();
+}
+
+List<int> _parseCategoryIds(dynamic rawCategoryIds, dynamic rawCategories) {
+  final output = <int>[];
+  final seen = <int>{};
+
+  void addId(dynamic raw) {
+    final id = parseInt(raw);
+    if (id <= 0 || !seen.add(id)) {
+      return;
+    }
+    output.add(id);
+  }
+
+  if (rawCategoryIds is List) {
+    for (final raw in rawCategoryIds) {
+      addId(raw);
+    }
+  }
+
+  if (rawCategories is List) {
+    for (final raw in rawCategories) {
+      if (raw is Map) {
+        final map = Map<String, dynamic>.from(raw);
+        addId(map['id']);
+      } else {
+        addId(raw);
+      }
+    }
+  }
+
+  return output;
 }

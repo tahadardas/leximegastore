@@ -127,6 +127,8 @@ Map<String, dynamic> extractMap(dynamic json) {
 
 /// Configured Dio HTTP client for the Lexi API.
 class DioClient {
+  static const String _allowHostFallbackExtraKey = 'allowHostFallback';
+
   late final ApiClient _apiClient;
   final SecureStore secureStore;
   final TokenManager tokenManager;
@@ -199,20 +201,41 @@ class DioClient {
       normalizedPath: normalizedPath,
       options: resolvedOptions,
     );
+    final preferRawWpJsonOnWeb =
+        kIsWeb &&
+        basePath.startsWith('/wp-json/') &&
+        !_requiresAuthForFallback(resolvedOptions, null);
+    final primaryPath = preferRawWpJsonOnWeb
+        ? (fallbackPath ?? normalizedPath)
+        : normalizedPath;
+    final secondaryPath = preferRawWpJsonOnWeb ? normalizedPath : fallbackPath;
 
     try {
       return await _dio.get(
-        normalizedPath,
+        primaryPath,
         queryParameters: queryParameters,
         options: resolvedOptions,
         cancelToken: cancelToken,
       );
     } on DioException catch (e) {
       if (_shouldTryWpFallbackGet(e)) {
-        if (fallbackPath != null) {
+        if (secondaryPath != null && secondaryPath != primaryPath) {
+          if (kDebugMode) {
+            final direction = preferRawWpJsonOnWeb
+                ? 'rest_route'
+                : 'raw wp-json';
+            debugPrint(
+              '[DioClient] GET fallback -> $direction path for $basePath',
+            );
+          }
+          if (kDebugMode) {
+            debugPrint(
+              '[DioClient] primary=$primaryPath secondary=$secondaryPath',
+            );
+          }
           try {
             return await _dio.get(
-              fallbackPath,
+              secondaryPath,
               queryParameters: queryParameters,
               options: resolvedOptions,
               cancelToken: cancelToken,
@@ -269,6 +292,11 @@ class DioClient {
     } on DioException catch (e) {
       if (_shouldTryWpFallbackPost(e)) {
         if (fallbackPath != null) {
+          if (kDebugMode) {
+            debugPrint(
+              '[DioClient] POST fallback -> raw wp-json path for $basePath',
+            );
+          }
           try {
             return await _dio.post(
               fallbackPath,
@@ -531,13 +559,13 @@ class DioClient {
     if (!basePath.startsWith('/wp-json/')) {
       return null;
     }
-    // On web, /wp-json/* can fail preflight or be blocked by host/CDN rules.
-    // Keep all web traffic on rest_route form and skip raw wp-json fallback.
-    if (kIsWeb) {
-      return null;
-    }
     final normalizedUri = Uri.parse(normalizedPath);
     if (normalizedUri.path != '/index.php') {
+      return null;
+    }
+    // For web: keep auth endpoints on rest_route, but allow public GET routes
+    // to fall back to raw /wp-json when rest_route hits CORS/XHR edge cases.
+    if (kIsWeb && _requiresAuthForFallback(options, null)) {
       return null;
     }
     return basePath;
@@ -553,12 +581,15 @@ class DioClient {
 
   bool _shouldTryWpFallbackByError(DioException error) {
     final status = error.response?.statusCode;
+    if (status == 401) {
+      return _shouldFallbackToRawWpJsonOnUnauthorized(error);
+    }
     if (status == 403) {
       // Only retry 403 when the backend responded with an HTML block page.
       // Token/permission JSON responses should not trigger route/host fallbacks.
       return _looksLikeHtmlBlock(error.response);
     }
-    if (status == 404 || status == 405 || status == 429) {
+    if (status == 404 || status == 405) {
       return true;
     }
 
@@ -574,6 +605,48 @@ class DioClient {
       DioExceptionType.unknown => true,
       _ => false,
     };
+  }
+
+  bool _shouldFallbackToRawWpJsonOnUnauthorized(DioException error) {
+    final request = error.requestOptions;
+    final requiresAuth = request.extra['requiresAuth'] as bool? ?? true;
+    if (!requiresAuth) {
+      return false;
+    }
+
+    final hasBearer = request.headers.entries.any((entry) {
+      if (entry.key.toLowerCase() != 'authorization') {
+        return false;
+      }
+      final value = (entry.value ?? '').toString().trim().toLowerCase();
+      return value.startsWith('bearer ');
+    });
+    if (!hasBearer) {
+      return false;
+    }
+
+    final uri = request.uri;
+    final restRoute = (uri.queryParameters['rest_route'] ?? '')
+        .toString()
+        .trim();
+    if (uri.path != '/index.php' || restRoute.isEmpty) {
+      return false;
+    }
+
+    final lowerRoute = restRoute.toLowerCase();
+    if (lowerRoute.contains('/auth/refresh') ||
+        lowerRoute.contains('/jwt-auth/v1/token')) {
+      return false;
+    }
+
+    final lowerBody = (error.response?.data ?? '').toString().toLowerCase();
+    if (lowerBody.contains('jwt_auth_invalid_token') ||
+        lowerBody.contains('token is invalid') ||
+        lowerBody.contains('token has expired')) {
+      return false;
+    }
+
+    return true;
   }
 
   bool _looksLikeHtmlBlock(Response<dynamic>? response) {
@@ -616,6 +689,14 @@ class DioClient {
     required Options? options,
     required CancelToken? cancelToken,
   }) async {
+    if (!_allowHostFallback(
+      options: options,
+      request: originalError.requestOptions,
+      error: originalError,
+    )) {
+      return null;
+    }
+
     if (kIsWeb &&
         _requiresAuthForFallback(options, originalError.requestOptions)) {
       return null;
@@ -679,6 +760,14 @@ class DioClient {
     required CancelToken? cancelToken,
     required dynamic data,
   }) async {
+    if (!_allowHostFallback(
+      options: options,
+      request: originalError.requestOptions,
+      error: originalError,
+    )) {
+      return null;
+    }
+
     if (kIsWeb &&
         _requiresAuthForFallback(options, originalError.requestOptions)) {
       return null;
@@ -732,5 +821,33 @@ class DioClient {
     }
 
     return null;
+  }
+
+  bool _allowHostFallback({
+    required Options? options,
+    required RequestOptions? request,
+    required DioException error,
+  }) {
+    final fromOptions = options?.extra?[_allowHostFallbackExtraKey];
+    final fromRequest = request?.extra[_allowHostFallbackExtraKey];
+    final enabled =
+        (fromOptions is bool && fromOptions) ||
+        (fromRequest is bool && fromRequest);
+    if (!enabled) {
+      return false;
+    }
+
+    if (error.response != null) {
+      return false;
+    }
+
+    return switch (error.type) {
+      DioExceptionType.connectionError => true,
+      DioExceptionType.connectionTimeout => true,
+      DioExceptionType.receiveTimeout => true,
+      DioExceptionType.sendTimeout => true,
+      DioExceptionType.unknown => true,
+      _ => false,
+    };
   }
 }

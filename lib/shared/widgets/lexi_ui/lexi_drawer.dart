@@ -16,6 +16,7 @@ class LexiDrawer extends ConsumerWidget {
     final session = ref.watch(appSessionProvider);
     final userLabel = session.displayName;
     final canAccessDashboard = session.isAdmin;
+    final canAccessCourierDashboard = session.isDeliveryAgent;
     final isLoggedIn = session.isLoggedIn;
 
     return Drawer(
@@ -97,6 +98,13 @@ class LexiDrawer extends ConsumerWidget {
                     subtitle: 'صلاحية مدير',
                     onTap: () => _go(context, '/admin/dashboard'),
                   ),
+                if (canAccessCourierDashboard)
+                  _DrawerItem(
+                    icon: FontAwesomeIcons.truck,
+                    title: 'لوحة تحكم المندوب',
+                    subtitle: 'طلبات التوصيل والحالة',
+                    onTap: () => _go(context, '/delivery/dashboard'),
+                  ),
               ],
             ),
           ),
@@ -155,7 +163,7 @@ class _DrawerHeader extends StatelessWidget {
           ),
           const SizedBox(height: LexiSpacing.sm),
           Text(
-            userLabel == null ? 'أهلاً بك زائرنا الكريم' : 'مرحباً، $userLabel',
+            userLabel == null ? 'أهلًا بك زائرنا الكريم' : 'مرحبًا، $userLabel',
             style: LexiTypography.bodySm.copyWith(color: LexiColors.brandWhite),
           ),
         ],

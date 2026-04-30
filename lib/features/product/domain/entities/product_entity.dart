@@ -22,7 +22,11 @@ class ProductEntity {
   final int wishlistCount;
   final int? brandId;
   final String brandName;
+  final List<int>? _categoryIds;
   final String type;
+  final DateTime? createdAt;
+  final int salesCount;
+  final int viewsCount;
 
   const ProductEntity({
     required this.id,
@@ -41,10 +45,15 @@ class ProductEntity {
     this.wishlistCount = 0,
     this.brandId,
     this.brandName = '',
+    List<int>? categoryIds,
     this.type = 'simple',
+    this.createdAt,
+    this.salesCount = 0,
+    this.viewsCount = 0,
     this.saleEndDate,
   }) : _image = image,
        _images = images,
+       _categoryIds = categoryIds,
        _cardImages = cardImages;
 
   ProductImageSet get image => _image ?? ProductImageSet.empty;
@@ -52,6 +61,8 @@ class ProductEntity {
   List<String> get images => _images ?? const <String>[];
 
   List<String> get cardImages => _cardImages ?? const <String>[];
+
+  List<int> get categoryIds => _categoryIds ?? const <int>[];
 
   /// The end date of the sale, if any.
   final DateTime? saleEndDate;
@@ -125,10 +136,24 @@ class ProductEntity {
 
   /// Card-friendly gallery URLs (small/medium), with fallback to full images.
   List<String> get effectiveCardImages {
-    if (cardImages.isNotEmpty) {
-      return cardImages;
+    return _collectUniqueUrls(<String>[
+      ...cardImages,
+      image.cardUrl ?? primaryImage,
+      ...images,
+    ]);
+  }
+
+  List<String> _collectUniqueUrls(Iterable<String> values) {
+    final output = <String>[];
+    final seen = <String>{};
+    for (final value in values) {
+      final normalized = normalizeNullableHttpUrl(value);
+      if (normalized == null || !seen.add(normalized)) {
+        continue;
+      }
+      output.add(normalized);
     }
-    return images;
+    return output;
   }
 
   @override

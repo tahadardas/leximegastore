@@ -268,7 +268,9 @@ class PollingManager with WidgetsBindingObserver {
 final pollingManagerProvider = Provider<PollingManager>((ref) {
   final manager = PollingManager(
     refreshNotifications: () async {
-      await ref.read(notificationsRealtimeServiceProvider).refreshNow();
+      await ref
+          .read(notificationsRealtimeServiceProvider)
+          .refreshNow(onlyCount: true);
     },
     refreshOrders: () async {
       await ref.read(ordersRealtimeServiceProvider).refreshNow();

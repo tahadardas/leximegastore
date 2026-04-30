@@ -2,8 +2,9 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -16,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.leximegastore.app"
+    namespace = "com.taha.leximega"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -43,7 +44,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.leximegastore.app"
+        applicationId = "com.taha.leximega"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -68,6 +69,6 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
-    implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-crashlytics")
 }

@@ -75,9 +75,25 @@ mixin _$ProductModel {
   @JsonKey(name: 'brand_name')
   String get brandName => throw _privateConstructorUsedError;
 
+  /// Category ids used for home-feed diversity fallback.
+  @JsonKey(name: 'category_ids')
+  List<int> get categoryIds => throw _privateConstructorUsedError;
+
   /// Product type (simple, variable, etc.)
   @JsonKey(name: 'type')
   String get type => throw _privateConstructorUsedError;
+
+  /// Product publish/create timestamp (if available from API).
+  @JsonKey(name: 'created_at')
+  DateTime? get createdAt => throw _privateConstructorUsedError;
+
+  /// Historical sales count used for home ranking.
+  @JsonKey(name: 'total_sales')
+  int get salesCount => throw _privateConstructorUsedError;
+
+  /// Product views count used for home ranking.
+  @JsonKey(name: 'views')
+  int get viewsCount => throw _privateConstructorUsedError;
 
   /// Create a copy of ProductModel
   /// with the given fields replaced by the non-null parameter values.
@@ -111,7 +127,11 @@ abstract class $ProductModelCopyWith<$Res> {
     @JsonKey(name: 'wishlist_count') int wishlistCount,
     @JsonKey(name: 'brand_id') int? brandId,
     @JsonKey(name: 'brand_name') String brandName,
+    @JsonKey(name: 'category_ids') List<int> categoryIds,
     @JsonKey(name: 'type') String type,
+    @JsonKey(name: 'created_at') DateTime? createdAt,
+    @JsonKey(name: 'total_sales') int salesCount,
+    @JsonKey(name: 'views') int viewsCount,
   });
 }
 
@@ -147,7 +167,11 @@ class _$ProductModelCopyWithImpl<$Res, $Val extends ProductModel>
     Object? wishlistCount = null,
     Object? brandId = freezed,
     Object? brandName = null,
+    Object? categoryIds = null,
     Object? type = null,
+    Object? createdAt = freezed,
+    Object? salesCount = null,
+    Object? viewsCount = null,
   }) {
     return _then(
       _value.copyWith(
@@ -219,10 +243,26 @@ class _$ProductModelCopyWithImpl<$Res, $Val extends ProductModel>
                 ? _value.brandName
                 : brandName // ignore: cast_nullable_to_non_nullable
                       as String,
+            categoryIds: null == categoryIds
+                ? _value.categoryIds
+                : categoryIds // ignore: cast_nullable_to_non_nullable
+                      as List<int>,
             type: null == type
                 ? _value.type
                 : type // ignore: cast_nullable_to_non_nullable
                       as String,
+            createdAt: freezed == createdAt
+                ? _value.createdAt
+                : createdAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            salesCount: null == salesCount
+                ? _value.salesCount
+                : salesCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            viewsCount: null == viewsCount
+                ? _value.viewsCount
+                : viewsCount // ignore: cast_nullable_to_non_nullable
+                      as int,
           )
           as $Val,
     );
@@ -256,7 +296,11 @@ abstract class _$$ProductModelImplCopyWith<$Res>
     @JsonKey(name: 'wishlist_count') int wishlistCount,
     @JsonKey(name: 'brand_id') int? brandId,
     @JsonKey(name: 'brand_name') String brandName,
+    @JsonKey(name: 'category_ids') List<int> categoryIds,
     @JsonKey(name: 'type') String type,
+    @JsonKey(name: 'created_at') DateTime? createdAt,
+    @JsonKey(name: 'total_sales') int salesCount,
+    @JsonKey(name: 'views') int viewsCount,
   });
 }
 
@@ -291,7 +335,11 @@ class __$$ProductModelImplCopyWithImpl<$Res>
     Object? wishlistCount = null,
     Object? brandId = freezed,
     Object? brandName = null,
+    Object? categoryIds = null,
     Object? type = null,
+    Object? createdAt = freezed,
+    Object? salesCount = null,
+    Object? viewsCount = null,
   }) {
     return _then(
       _$ProductModelImpl(
@@ -363,10 +411,26 @@ class __$$ProductModelImplCopyWithImpl<$Res>
             ? _value.brandName
             : brandName // ignore: cast_nullable_to_non_nullable
                   as String,
+        categoryIds: null == categoryIds
+            ? _value._categoryIds
+            : categoryIds // ignore: cast_nullable_to_non_nullable
+                  as List<int>,
         type: null == type
             ? _value.type
             : type // ignore: cast_nullable_to_non_nullable
                   as String,
+        createdAt: freezed == createdAt
+            ? _value.createdAt
+            : createdAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        salesCount: null == salesCount
+            ? _value.salesCount
+            : salesCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        viewsCount: null == viewsCount
+            ? _value.viewsCount
+            : viewsCount // ignore: cast_nullable_to_non_nullable
+                  as int,
       ),
     );
   }
@@ -393,9 +457,14 @@ class _$ProductModelImpl implements _ProductModel {
     @JsonKey(name: 'wishlist_count') this.wishlistCount = 0,
     @JsonKey(name: 'brand_id') this.brandId,
     @JsonKey(name: 'brand_name') this.brandName = '',
+    @JsonKey(name: 'category_ids') final List<int> categoryIds = const <int>[],
     @JsonKey(name: 'type') this.type = 'simple',
+    @JsonKey(name: 'created_at') this.createdAt,
+    @JsonKey(name: 'total_sales') this.salesCount = 0,
+    @JsonKey(name: 'views') this.viewsCount = 0,
   }) : _images = images,
-       _cardImages = cardImages;
+       _cardImages = cardImages,
+       _categoryIds = categoryIds;
 
   @override
   final int id;
@@ -490,14 +559,41 @@ class _$ProductModelImpl implements _ProductModel {
   @JsonKey(name: 'brand_name')
   final String brandName;
 
+  /// Category ids used for home-feed diversity fallback.
+  final List<int> _categoryIds;
+
+  /// Category ids used for home-feed diversity fallback.
+  @override
+  @JsonKey(name: 'category_ids')
+  List<int> get categoryIds {
+    if (_categoryIds is EqualUnmodifiableListView) return _categoryIds;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_categoryIds);
+  }
+
   /// Product type (simple, variable, etc.)
   @override
   @JsonKey(name: 'type')
   final String type;
 
+  /// Product publish/create timestamp (if available from API).
+  @override
+  @JsonKey(name: 'created_at')
+  final DateTime? createdAt;
+
+  /// Historical sales count used for home ranking.
+  @override
+  @JsonKey(name: 'total_sales')
+  final int salesCount;
+
+  /// Product views count used for home ranking.
+  @override
+  @JsonKey(name: 'views')
+  final int viewsCount;
+
   @override
   String toString() {
-    return 'ProductModel(id: $id, name: $name, price: $price, regularPrice: $regularPrice, salePrice: $salePrice, image: $image, images: $images, cardImages: $cardImages, rating: $rating, reviewsCount: $reviewsCount, inStock: $inStock, description: $description, shortDescription: $shortDescription, dateOnSaleTo: $dateOnSaleTo, wishlistCount: $wishlistCount, brandId: $brandId, brandName: $brandName, type: $type)';
+    return 'ProductModel(id: $id, name: $name, price: $price, regularPrice: $regularPrice, salePrice: $salePrice, image: $image, images: $images, cardImages: $cardImages, rating: $rating, reviewsCount: $reviewsCount, inStock: $inStock, description: $description, shortDescription: $shortDescription, dateOnSaleTo: $dateOnSaleTo, wishlistCount: $wishlistCount, brandId: $brandId, brandName: $brandName, categoryIds: $categoryIds, type: $type, createdAt: $createdAt, salesCount: $salesCount, viewsCount: $viewsCount)';
   }
 
   @override
@@ -533,11 +629,21 @@ class _$ProductModelImpl implements _ProductModel {
             (identical(other.brandId, brandId) || other.brandId == brandId) &&
             (identical(other.brandName, brandName) ||
                 other.brandName == brandName) &&
-            (identical(other.type, type) || other.type == type));
+            const DeepCollectionEquality().equals(
+              other._categoryIds,
+              _categoryIds,
+            ) &&
+            (identical(other.type, type) || other.type == type) &&
+            (identical(other.createdAt, createdAt) ||
+                other.createdAt == createdAt) &&
+            (identical(other.salesCount, salesCount) ||
+                other.salesCount == salesCount) &&
+            (identical(other.viewsCount, viewsCount) ||
+                other.viewsCount == viewsCount));
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     runtimeType,
     id,
     name,
@@ -556,8 +662,12 @@ class _$ProductModelImpl implements _ProductModel {
     wishlistCount,
     brandId,
     brandName,
+    const DeepCollectionEquality().hash(_categoryIds),
     type,
-  );
+    createdAt,
+    salesCount,
+    viewsCount,
+  ]);
 
   /// Create a copy of ProductModel
   /// with the given fields replaced by the non-null parameter values.
@@ -587,7 +697,11 @@ abstract class _ProductModel implements ProductModel {
     @JsonKey(name: 'wishlist_count') final int wishlistCount,
     @JsonKey(name: 'brand_id') final int? brandId,
     @JsonKey(name: 'brand_name') final String brandName,
+    @JsonKey(name: 'category_ids') final List<int> categoryIds,
     @JsonKey(name: 'type') final String type,
+    @JsonKey(name: 'created_at') final DateTime? createdAt,
+    @JsonKey(name: 'total_sales') final int salesCount,
+    @JsonKey(name: 'views') final int viewsCount,
   }) = _$ProductModelImpl;
 
   @override
@@ -665,10 +779,30 @@ abstract class _ProductModel implements ProductModel {
   @JsonKey(name: 'brand_name')
   String get brandName;
 
+  /// Category ids used for home-feed diversity fallback.
+  @override
+  @JsonKey(name: 'category_ids')
+  List<int> get categoryIds;
+
   /// Product type (simple, variable, etc.)
   @override
   @JsonKey(name: 'type')
   String get type;
+
+  /// Product publish/create timestamp (if available from API).
+  @override
+  @JsonKey(name: 'created_at')
+  DateTime? get createdAt;
+
+  /// Historical sales count used for home ranking.
+  @override
+  @JsonKey(name: 'total_sales')
+  int get salesCount;
+
+  /// Product views count used for home ranking.
+  @override
+  @JsonKey(name: 'views')
+  int get viewsCount;
 
   /// Create a copy of ProductModel
   /// with the given fields replaced by the non-null parameter values.

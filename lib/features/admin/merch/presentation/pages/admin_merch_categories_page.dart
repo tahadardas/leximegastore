@@ -73,7 +73,12 @@ class _AdminMerchCategoriesPageState
                 key: ValueKey(category.id),
                 child: ListTile(
                   leading: CircleAvatar(child: Text('${index + 1}')),
-                  title: Text(category.name),
+                  title: Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      start: category.depth * 14.0,
+                    ),
+                    child: Text(category.name),
+                  ),
                   subtitle: Text('عدد المنتجات: ${category.count}'),
                   trailing: const Icon(Icons.drag_handle),
                 ),
@@ -127,6 +132,7 @@ class _AdminMerchCategoriesPageState
           .read(adminMerchCategoriesControllerProvider.notifier)
           .saveOrder(_items);
       if (!mounted) return;
+      setState(() => _items = const []);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('تم حفظ الترتيب بنجاح.')));

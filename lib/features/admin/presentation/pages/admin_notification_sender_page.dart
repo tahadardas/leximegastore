@@ -109,11 +109,23 @@ class _AdminNotificationSenderPageState
     _campaignOpenMode = _defaultOpenMode;
     _fcmProjectIdController.text = (settings['fcm_project_id'] ?? '')
         .toString();
-    _fcmServiceAccountPathController.text =
-        (settings['fcm_service_account_path_masked'] ?? '').toString();
+    final maskedPath =
+        (settings['fcm_service_account_path'] ??
+                settings['fcm_service_account_path_masked'] ??
+                '')
+            .toString();
+    _fcmServiceAccountPathController.text = maskedPath;
   }
 
   Widget _buildFirebaseSettingsCard(AdminNotificationUiState state) {
+    final settings = state.firebaseSettings ?? const <String, dynamic>{};
+    final configWarning = (settings['config_warning'] ?? '').toString().trim();
+    final effectiveProjectId = (settings['effective_project_id'] ?? '')
+        .toString()
+        .trim();
+    final serviceAccountProjectId =
+        (settings['service_account_project_id'] ?? '').toString().trim();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -124,6 +136,34 @@ class _AdminNotificationSenderPageState
               'إعدادات Firebase',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
+            if (configWarning.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(
+                  'تحذير إعدادات FCM: $configWarning',
+                  style: TextStyle(color: Colors.red.shade800),
+                ),
+              ),
+            ],
+            if (effectiveProjectId.isNotEmpty ||
+                serviceAccountProjectId.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Project فعّال: ${effectiveProjectId.isEmpty ? '-' : effectiveProjectId} | Service Account: ${serviceAccountProjectId.isEmpty ? '-' : serviceAccountProjectId}',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,

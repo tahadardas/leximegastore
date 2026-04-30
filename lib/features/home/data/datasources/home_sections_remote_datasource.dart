@@ -79,32 +79,54 @@ class HomeSectionsRemoteDatasource {
       }
 
       return const [];
-    } catch (_) {
+    } catch (error) {
       // 3. Network Fetch Failed: Fallback to cache even if preferCache was false
       final fallbackCache = await _cacheStore.readJson(cacheKey);
       if (fallbackCache != null) {
         return _parseSections(fallbackCache.data['payload']);
       }
-      rethrow;
+
+      // 4) Final graceful fallback: try generic products feed so the home page
+      // can still render content instead of failing hard.
+      final fallbackProducts = _shouldUseProductFeedFallback(error)
+          ? await _getFallbackProducts()
+          : const <ProductEntity>[];
+      if (fallbackProducts.isNotEmpty) {
+        return [
+          HomeSectionModel(
+            id: 0,
+            titleAr: 'كل المنتجات',
+            type: 'fallback_all_products',
+            sortOrder: 0,
+            termId: null,
+            items: fallbackProducts,
+          ),
+        ];
+      }
+
+      return const [];
     }
   }
 
-  Future<List<HomeAdBannerModel>> getAdBanners() async {
-    try {
-      final response = await _client.get(
-        Endpoints.homeAdBanners(),
-        options: Options(extra: const {'requiresAuth': false}),
-      );
+  Future<List<HomeAdBannerModel>> getAdBanners({
+    bool preferCache = true,
+  }) async {
+    final cacheKey = CachePolicy.key(CacheKey.homeAdBanners);
+    final cached = preferCache ? await _cacheStore.readJson(cacheKey) : null;
 
-      final rows = extractList(_jsonSafe(response.data));
-      return rows
-          .whereType<Map>()
-          .map(
-            (row) => HomeAdBannerModel.fromJson(Map<String, dynamic>.from(row)),
-          )
-          .where((item) => item.imageUrl.trim().isNotEmpty)
-          .toList();
+    if (preferCache && cached != null) {
+      unawaited(_refreshAdBannersCacheSilently());
+      return _parseAdBanners(cached.data['payload']);
+    }
+
+    try {
+      final payload = await _fetchAdBannersPayload();
+      await _saveAdBannersPayload(payload);
+      return _parseAdBanners(payload);
     } catch (_) {
+      if (cached != null) {
+        return _parseAdBanners(cached.data['payload']);
+      }
       return const [];
     }
   }
@@ -112,6 +134,14 @@ class HomeSectionsRemoteDatasource {
   Future<dynamic> _fetchSectionsPayload() async {
     final response = await _client.get(
       Endpoints.homeSections(),
+      options: Options(extra: const {'requiresAuth': false}),
+    );
+    return _jsonSafe(response.data);
+  }
+
+  Future<dynamic> _fetchAdBannersPayload() async {
+    final response = await _client.get(
+      Endpoints.homeAdBanners(),
       options: Options(extra: const {'requiresAuth': false}),
     );
     return _jsonSafe(response.data);
@@ -131,6 +161,20 @@ class HomeSectionsRemoteDatasource {
     }
   }
 
+  Future<void> _refreshAdBannersCacheSilently() async {
+    final hasConnection = await _hasConnection();
+    if (!hasConnection) {
+      return;
+    }
+
+    try {
+      final payload = await _fetchAdBannersPayload();
+      await _saveAdBannersPayload(payload);
+    } catch (_) {
+      // Keep stale banner cache when background refresh fails.
+    }
+  }
+
   Future<void> _saveHomePayload(dynamic payload) async {
     final now = DateTime.now();
     final jsonPayload = _jsonSafe(payload);
@@ -147,6 +191,12 @@ class HomeSectionsRemoteDatasource {
     await _cacheStore.saveJson(CachePolicy.key(CacheKey.homeCategories), {
       'payload': jsonPayload,
     }, now);
+  }
+
+  Future<void> _saveAdBannersPayload(dynamic payload) async {
+    await _cacheStore.saveJson(CachePolicy.key(CacheKey.homeAdBanners), {
+      'payload': _jsonSafe(payload),
+    }, DateTime.now());
   }
 
   List<HomeSectionModel> _parseSections(dynamic payload) {
@@ -195,6 +245,17 @@ class HomeSectionsRemoteDatasource {
         items: products,
       ),
     ];
+  }
+
+  List<HomeAdBannerModel> _parseAdBanners(dynamic payload) {
+    final rows = extractList(payload);
+    return rows
+        .whereType<Map>()
+        .map(
+          (row) => HomeAdBannerModel.fromJson(Map<String, dynamic>.from(row)),
+        )
+        .where((item) => item.imageUrl.trim().isNotEmpty)
+        .toList(growable: false);
   }
 
   List<ProductEntity> _extractProductsFromSection(
@@ -255,7 +316,7 @@ class HomeSectionsRemoteDatasource {
   Future<List<dynamic>> _rawFallbackRows() async {
     final response = await _client.get(
       Endpoints.productsPath,
-      queryParameters: const {'page': 1, 'per_page': 40, 'sort': 'newest'},
+      queryParameters: const {'page': 1, 'per_page': 20, 'sort': 'newest'},
       options: Options(extra: const {'requiresAuth': false}),
     );
     return extractList(response.data);
@@ -275,6 +336,19 @@ class HomeSectionsRemoteDatasource {
     } catch (_) {
       return const [];
     }
+  }
+
+  bool _shouldUseProductFeedFallback(Object error) {
+    if (error is! DioException) {
+      return false;
+    }
+
+    final status = error.response?.statusCode ?? 0;
+    if (status >= 500 && status < 600) {
+      return true;
+    }
+
+    return status == 404 || status == 405;
   }
 
   Future<bool> _hasConnection() async {

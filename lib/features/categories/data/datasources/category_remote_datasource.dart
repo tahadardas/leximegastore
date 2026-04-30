@@ -12,6 +12,11 @@ import '../models/category_model.dart';
 
 /// Remote data source for Categories.
 class CategoryRemoteDatasource {
+  static const String _categoriesCacheVersion = 'wp_admin_ordered_v2';
+  static const String _storeCategoriesPath =
+      '/wp-json/wc/store/v1/products/categories';
+  static const Duration _freshCategoriesCacheTtl = Duration(minutes: 2);
+
   final DioClient _client;
   final CacheStore _cacheStore;
 
@@ -23,10 +28,13 @@ class CategoryRemoteDatasource {
 
   /// Fetches all categories.
   Future<List<CategoryModel>> getCategories({bool preferCache = true}) async {
-    final cacheKey = CachePolicy.key(CacheKey.categoriesList);
+    final cacheKey = _categoriesCacheKey;
     final cached = await _cacheStore.readJson(cacheKey);
+    final hasFreshCache =
+        cached != null &&
+        DateTime.now().difference(cached.savedAt) <= _freshCategoriesCacheTtl;
 
-    if (preferCache && cached != null) {
+    if (preferCache && hasFreshCache) {
       unawaited(_refreshCategoriesSilently());
       return _parseCategoryList(cached.data['payload']);
     }
@@ -34,20 +42,34 @@ class CategoryRemoteDatasource {
     try {
       final response = await _client.get(
         Endpoints.categoriesPath,
-        queryParameters: const {'include_empty': 1},
-        options: Options(extra: const {'requiresAuth': false}),
+        queryParameters: _categoryQueryParameters,
+        options: _publicNoCacheOptions,
       );
+      final payload = await _normalizeCategoriesPayload(response.data);
 
       await _cacheStore.saveJson(cacheKey, {
-        'payload': _jsonSafe(response.data),
+        'payload': _jsonSafe(payload),
       }, DateTime.now());
 
-      return _parseCategoryList(response.data);
-    } catch (_) {
+      return _parseCategoryList(payload);
+    } catch (error, stackTrace) {
+      try {
+        final fallbackPayload = await _fetchStoreCategories();
+        final payload = await _normalizeCategoriesPayload(fallbackPayload);
+
+        await _cacheStore.saveJson(cacheKey, {
+          'payload': _jsonSafe(payload),
+        }, DateTime.now());
+
+        return _parseCategoryList(payload);
+      } catch (_) {
+        // Fall back to the normal cache/error path below.
+      }
+
       if (cached != null) {
         return _parseCategoryList(cached.data['payload']);
       }
-      rethrow;
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
@@ -112,15 +134,234 @@ class CategoryRemoteDatasource {
     try {
       final response = await _client.get(
         Endpoints.categoriesPath,
-        queryParameters: const {'include_empty': 1},
-        options: Options(extra: const {'requiresAuth': false}),
+        queryParameters: _categoryQueryParameters,
+        options: _publicNoCacheOptions,
       );
-      await _cacheStore.saveJson(CachePolicy.key(CacheKey.categoriesList), {
-        'payload': _jsonSafe(response.data),
+      final payload = await _normalizeCategoriesPayload(response.data);
+      await _cacheStore.saveJson(_categoriesCacheKey, {
+        'payload': _jsonSafe(payload),
       }, DateTime.now());
     } catch (_) {
       // Keep stale cache when background refresh fails.
     }
+  }
+
+  Future<List<dynamic>> _fetchStoreCategories() async {
+    final categories = <dynamic>[];
+    var page = 1;
+    var totalPages = 1;
+
+    do {
+      final response = await _client.get(
+        _storeCategoriesPath,
+        queryParameters: <String, dynamic>{
+          'page': page,
+          'per_page': 100,
+          ..._localWebCorsCacheKey,
+        },
+        options: _publicNoCacheOptions,
+      );
+
+      categories.addAll(extractList(response.data));
+      final headerTotalPages = int.tryParse(
+        response.headers.value('x-wp-totalpages') ?? '',
+      );
+      totalPages = headerTotalPages != null && headerTotalPages > 0
+          ? headerTotalPages
+          : 1;
+      page++;
+    } while (page <= totalPages && page <= 20);
+
+    return categories;
+  }
+
+  String get _categoriesCacheKey =>
+      CachePolicy.key(CacheKey.categoriesList, suffix: _categoriesCacheVersion);
+
+  Map<String, dynamic> get _categoryQueryParameters {
+    return <String, dynamic>{
+      'include_empty': 1,
+      'view': 'admin_ordered',
+      ..._localWebCorsCacheKey,
+    };
+  }
+
+  Options get _publicNoCacheOptions {
+    return Options(extra: const {'requiresAuth': false});
+  }
+
+  Map<String, String> get _localWebCorsCacheKey {
+    if (!_isLocalWebOrigin) {
+      return const <String, String>{};
+    }
+
+    final origin = Uri.base;
+    final port = origin.hasPort ? origin.port.toString() : 'default';
+    return <String, String>{
+      '_lexi_web_origin': '${origin.scheme}_${origin.host}_$port',
+    };
+  }
+
+  bool get _isLocalWebOrigin {
+    if (!kIsWeb) {
+      return false;
+    }
+
+    final host = Uri.base.host.toLowerCase();
+    return host == 'localhost' || host == '127.0.0.1' || host == '::1';
+  }
+
+  Future<dynamic> _normalizeCategoriesPayload(dynamic payload) async {
+    final rawList = extractList(payload);
+    if (rawList.isEmpty) {
+      return payload;
+    }
+
+    if (_hasServerOrdering(rawList)) {
+      return rawList;
+    }
+
+    final normalized = rawList
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    if (normalized.isEmpty) {
+      return rawList;
+    }
+
+    normalized.sort(_compareRawCategories);
+    for (var index = 0; index < normalized.length; index++) {
+      final category = normalized[index];
+      if (!category.containsKey('order_index')) {
+        category['order_index'] = index;
+      }
+      if (!category.containsKey('admin_order_index')) {
+        category['admin_order_index'] = category['order_index'];
+      }
+    }
+    return normalized;
+  }
+
+  bool _hasServerOrdering(List<dynamic> rows) {
+    for (final row in rows) {
+      if (row is! Map) {
+        continue;
+      }
+      final map = Map<String, dynamic>.from(row);
+      if (map.containsKey('categories_page_order_index') ||
+          map.containsKey('admin_order_index') ||
+          map.containsKey('order_index') ||
+          map.containsKey('sort_order')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @visibleForTesting
+  static List<dynamic> orderCategoriesByPageSlugs(
+    List<dynamic> rawList,
+    List<String> pageSlugs,
+  ) {
+    final categories = rawList
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    if (categories.isEmpty || pageSlugs.isEmpty) {
+      return rawList;
+    }
+
+    final topLevelBySlug = <String, Map<String, dynamic>>{};
+    final topLevelCategories = <Map<String, dynamic>>[];
+    final childrenByParent = <int, List<Map<String, dynamic>>>{};
+
+    for (final category in categories) {
+      final parentId = _readInt(
+        category['parent'] ?? category['parent_id'] ?? category['parentId'],
+      );
+      if (parentId <= 0) {
+        topLevelCategories.add(category);
+        final slug = (category['slug'] ?? '').toString().trim();
+        if (slug.isNotEmpty) {
+          topLevelBySlug[slug] = category;
+        }
+        continue;
+      }
+
+      childrenByParent
+          .putIfAbsent(parentId, () => <Map<String, dynamic>>[])
+          .add(category);
+    }
+
+    for (final siblings in childrenByParent.values) {
+      siblings.sort(_compareRawCategories);
+    }
+
+    final ordered = <Map<String, dynamic>>[];
+    final visited = <int>{};
+
+    void appendWithChildren(Map<String, dynamic> category) {
+      final id = _readInt(category['id']);
+      if (id <= 0 || !visited.add(id)) {
+        return;
+      }
+
+      category['categories_page_order_index'] = ordered.length;
+      category['order_index'] = ordered.length;
+      ordered.add(category);
+
+      final children = childrenByParent[id] ?? const <Map<String, dynamic>>[];
+      for (final child in children) {
+        appendWithChildren(child);
+      }
+    }
+
+    for (final slug in pageSlugs) {
+      final category = topLevelBySlug[slug];
+      if (category != null) {
+        appendWithChildren(category);
+      }
+    }
+
+    for (final category in topLevelCategories) {
+      appendWithChildren(category);
+    }
+
+    for (final category in categories) {
+      appendWithChildren(category);
+    }
+
+    return ordered.isNotEmpty ? ordered : rawList;
+  }
+
+  static int _compareRawCategories(
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    final orderCompare = _readSortOrder(a).compareTo(_readSortOrder(b));
+    if (orderCompare != 0) {
+      return orderCompare;
+    }
+    return (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString());
+  }
+
+  static int _readSortOrder(Map<String, dynamic> category) {
+    return _readInt(
+      category['categories_page_order_index'] ??
+          category['admin_order_index'] ??
+          category['order_index'] ??
+          category['sort_order'],
+    );
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse((value ?? '').toString().trim()) ?? 0;
   }
 
   List<CategoryModel> _parseCategoryList(dynamic payload) {

@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../design_system/lexi_tokens.dart';
 import '../../design_system/lexi_typography.dart';
 import '../../shared/widgets/lexi_ui/lexi_skeleton.dart';
-import '../../ui/widgets/lexi_safe_bottom.dart';
 import 'search_controller.dart';
 import 'widgets/search_product_tile.dart';
 
@@ -102,14 +101,6 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     );
   }
 
-  void _showNotReadyMessage(String label) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        lexiFloatingSnackBar(context, content: Text('$label سيتوفر قريباً.')),
-      );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(searchControllerProvider);
@@ -144,12 +135,6 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                     _SortMenuPillButton(
                       value: state.resultsSort,
                       onSelected: _applySort,
-                    ),
-                    const SizedBox(width: LexiSpacing.sm),
-                    _FilterPillButton(
-                      icon: FontAwesomeIcons.sliders,
-                      label: 'تصفية',
-                      onTap: () => _showNotReadyMessage('عوامل التصفية'),
                     ),
                   ],
                 ),
@@ -383,8 +368,8 @@ class _SortMenuPillButton extends StatelessWidget {
             .toList(growable: false);
       },
       child: _FilterPillButton(
-        icon: FontAwesomeIcons.arrowDownWideShort,
-        label: _labelFor(value),
+        icon: FontAwesomeIcons.sliders,
+        label: 'تصفية: ${_labelFor(value)}',
         onTap: () {},
         interactive: false,
       ),

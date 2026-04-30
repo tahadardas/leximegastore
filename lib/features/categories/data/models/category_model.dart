@@ -41,7 +41,13 @@ class CategoryModel with _$CategoryModel {
       childrenCount: parseInt(
         json['children_count'] ?? json['childrenCount'] ?? json['child_count'],
       ),
-      sortOrder: parseInt(json['sort_order']),
+      sortOrder: parseInt(
+        json['categories_page_order_index'] ??
+            json['page_order_index'] ??
+            json['admin_order_index'] ??
+            json['order_index'] ??
+            json['sort_order'],
+      ),
     );
   }
 }

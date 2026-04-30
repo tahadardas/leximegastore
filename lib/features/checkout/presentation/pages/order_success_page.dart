@@ -3,14 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/lexi_theme.dart';
-import '../../../../shared/services/share_service.dart';
+import '../../../../core/session/app_session.dart';
 import '../../../../shared/widgets/app_button.dart';
-import '../../../orders/data/repositories/order_repository_impl.dart';
 
 class OrderSuccessPage extends ConsumerStatefulWidget {
   final String orderId;
+  final String? phone;
 
-  const OrderSuccessPage({super.key, required this.orderId});
+  const OrderSuccessPage({super.key, required this.orderId, this.phone});
 
   @override
   ConsumerState<OrderSuccessPage> createState() => _OrderSuccessPageState();
@@ -20,26 +20,34 @@ class _OrderSuccessPageState extends ConsumerState<OrderSuccessPage> {
   bool _isSharing = false;
 
   Future<void> _handleShareReceipt() async {
+    final phone = (widget.phone ?? '').trim();
+    final isLoggedIn = ref.read(appSessionProvider).isLoggedIn;
+    if (phone.isEmpty && !isLoggedIn) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_arabicPhoneRequiredMessage())));
+      return;
+    }
+
     setState(() => _isSharing = true);
     try {
-      final orderIdInt = int.tryParse(widget.orderId);
-      if (orderIdInt == null) return;
-
-      final order = await ref
-          .read(orderRepositoryProvider)
-          .myOrderDetails(orderIdInt);
-      await ShareService.instance.shareOrderToWhatsApp(order);
-    } catch (e) {
-      // If full details fetch fails or WhatsApp fails, fallback to provisional invoice URL
-      if (mounted) {
-        context.push('/orders/${widget.orderId}/invoice?type=provisional');
-      }
+      final uri = Uri(
+        path: '/orders/${widget.orderId}/invoice',
+        queryParameters: {
+          'type': 'provisional',
+          if (phone.isNotEmpty) 'phone': phone,
+        },
+      );
+      await context.push<void>(uri.toString());
     } finally {
       if (mounted) {
         setState(() => _isSharing = false);
       }
     }
   }
+
+  String _arabicPhoneRequiredMessage() =>
+      '\u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062a\u0641 \u0645\u0637\u0644\u0648\u0628 \u0644\u0639\u0631\u0636 \u0641\u0627\u062a\u0648\u0631\u0629 \u0637\u0644\u0628 \u0627\u0644\u0636\u064a\u0641.';
 
   @override
   Widget build(BuildContext context) {

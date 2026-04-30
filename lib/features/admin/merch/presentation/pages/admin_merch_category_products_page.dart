@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/ui/lexi_alert.dart';
@@ -86,7 +86,7 @@ class _AdminMerchCategoryProductsPageState
                               .map(
                                 (item) => DropdownMenuItem<int>(
                                   value: item.id,
-                                  child: Text(item.name),
+                                  child: Text(item.hierarchyLabel),
                                 ),
                               )
                               .toList(),
@@ -154,7 +154,12 @@ class _AdminMerchCategoryProductsPageState
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 16),
+                    padding: const EdgeInsetsDirectional.fromSTEB(
+                      16,
+                      0,
+                      16,
+                      16,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
@@ -277,6 +282,7 @@ class _AdminMerchCategoryProductsPageState
           .read(adminCategoryMerchControllerProvider(termId).notifier)
           .save(payload);
       if (!mounted) return;
+      setState(() => _working = const []);
       await LexiAlert.dismiss(context);
       if (!mounted) return;
       await LexiAlert.success(context, text: 'تم حفظ ترتيب المنتجات بنجاح.');
@@ -377,4 +383,3 @@ class _SimpleError extends StatelessWidget {
     );
   }
 }
-

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../../core/utils/safe_parsers.dart';
 import '../../../../core/utils/text_normalizer.dart';
+import '../../../../core/utils/url_utils.dart';
 import '../../../../features/cart/domain/entities/cart_item.dart';
 import '../../../../features/payment/domain/entities/payment_method.dart';
 import '../../../../features/payment/domain/entities/payment_proof.dart';
@@ -70,13 +71,19 @@ class Order {
         normalizedPayload['created_at'] ??
         normalizedPayload['createdAt'];
     final currencyRaw = TextNormalizer.normalize(normalizedPayload['currency']);
+    final orderId = TextNormalizer.normalize(
+      normalizedPayload['id'] ?? normalizedPayload['order_id'],
+    );
+    final orderNumber = TextNormalizer.normalize(
+      normalizedPayload['order_number'] ??
+          normalizedPayload['orderNumber'] ??
+          normalizedPayload['number'],
+    );
 
     return Order(
-      id: (normalizedPayload['id'] ?? '').toString(),
-      orderNumber: TextNormalizer.normalize(
-        normalizedPayload['order_number'] ?? normalizedPayload['orderNumber'],
-      ),
-      date: DateTime.tryParse(dateRaw?.toString() ?? '') ?? DateTime.now(),
+      id: orderId,
+      orderNumber: orderNumber.isNotEmpty ? orderNumber : orderId,
+      date: _parseOrderDate(dateRaw),
       status: TextNormalizer.normalize(
         normalizedPayload['status'] ?? 'pending',
       ),
@@ -246,6 +253,43 @@ class Order {
     return totalQty > 0 ? totalQty : items.length;
   }
 
+  static DateTime _parseOrderDate(dynamic raw) {
+    if (raw == null) {
+      return DateTime.now();
+    }
+
+    if (raw is DateTime) {
+      return raw;
+    }
+
+    if (raw is num) {
+      final timestamp = raw.toInt();
+      if (timestamp > 0) {
+        final millis = timestamp > 1000000000000 ? timestamp : timestamp * 1000;
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+      return DateTime.now();
+    }
+
+    final text = raw.toString().trim();
+    if (text.isEmpty) {
+      return DateTime.now();
+    }
+
+    final parsed = DateTime.tryParse(text);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    final asInt = parseInt(text);
+    if (asInt > 0) {
+      final millis = asInt > 1000000000000 ? asInt : asInt * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+
+    return DateTime.now();
+  }
+
   static List<CartItem> _parseItems(dynamic raw) {
     if (raw is Map) {
       final normalized = _mapOrNull(raw);
@@ -335,16 +379,7 @@ class Order {
                   product?['name'],
             ),
             price: price,
-            image:
-                (map['image'] ??
-                        map['image_url'] ??
-                        map['imageUrl'] ??
-                        map['thumbnail'] ??
-                        map['image_src'] ??
-                        product?['image'] ??
-                        product?['image_url'] ??
-                        '')
-                    .toString(),
+            image: _resolveItemImage(map, product: product),
             qty: qty > 0 ? qty : 1,
             unitType: TextNormalizer.normalize(map['unit_type']),
             piecesCount: parseDouble(map['pieces_count']),
@@ -356,6 +391,90 @@ class Order {
         })
         .whereType<CartItem>()
         .toList();
+  }
+
+  static String _resolveItemImage(
+    Map<String, dynamic> map, {
+    Map<String, dynamic>? product,
+  }) {
+    final candidates = <dynamic>[
+      map['image_url'],
+      map['imageUrl'],
+      map['thumbnail'],
+      map['image_src'],
+      map['image'],
+      product?['image_url'],
+      product?['imageUrl'],
+      product?['thumbnail'],
+      product?['image_src'],
+      product?['image'],
+      product?['images'],
+    ];
+
+    for (final candidate in candidates) {
+      final resolved = _extractImageUrl(candidate);
+      if (resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+
+    return '';
+  }
+
+  static String _extractImageUrl(dynamic raw) {
+    if (raw == null) {
+      return '';
+    }
+
+    if (raw is String) {
+      return normalizeNullableHttpUrl(raw) ?? raw.trim();
+    }
+
+    if (raw is List) {
+      for (final item in raw) {
+        final resolved = _extractImageUrl(item);
+        if (resolved.isNotEmpty) {
+          return resolved;
+        }
+      }
+      return '';
+    }
+
+    final map = _mapOrNull(raw);
+    if (map == null) {
+      return normalizeNullableHttpUrl(raw.toString()) ?? raw.toString().trim();
+    }
+
+    for (final key in const [
+      'src',
+      'url',
+      'image_url',
+      'imageUrl',
+      'thumbnail',
+      'thumb',
+      'medium',
+      'large',
+      'full',
+    ]) {
+      final value = map[key];
+      if (value == null) {
+        continue;
+      }
+      final resolved =
+          normalizeNullableHttpUrl(value.toString()) ?? value.toString().trim();
+      if (resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+
+    for (final key in const ['sizes', 'image', 'images']) {
+      final nested = _extractImageUrl(map[key]);
+      if (nested.isNotEmpty) {
+        return nested;
+      }
+    }
+
+    return '';
   }
 
   static PaymentMethod? _parsePaymentMethod(dynamic raw) {

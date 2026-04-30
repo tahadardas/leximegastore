@@ -52,7 +52,7 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
-  static const double _homeTopBarHeight = 80;
+  static const double _homeTopBarHeight = 110;
   static const double _paginationThreshold = 420;
   static const int _nextPageSkeletonCount = 4;
   static const int _initialSkeletonCount = 8;
@@ -63,22 +63,19 @@ class _HomePageState extends ConsumerState<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final Set<String> _prefetchedUrls = <String>{};
+  String _lastPrefetchSignature = '';
 
-  Timer? _flashTimer;
   Timer? _scrollDebounce;
   int _adBannerIndex = 0;
-  Duration _flashRemaining = const Duration(hours: 5, minutes: 59, seconds: 59);
 
   @override
   void initState() {
     super.initState();
-    _startFlashCountdown();
     _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
-    _flashTimer?.cancel();
     _scrollDebounce?.cancel();
     _scrollController
       ..removeListener(_onScroll)
@@ -105,21 +102,42 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
     final categories = categoriesAsync.valueOrNull ?? const <CategoryEntity>[];
     final buckets = _buildMerchandising(sections);
+    final fallbackBannerProducts = buckets.bannerProducts.isNotEmpty
+        ? buckets.bannerProducts
+        : sections.expand((section) => section.items).toList(growable: false);
+    final displayAdBanners = adBanners.isNotEmpty
+        ? adBanners
+        : _buildFallbackAdBannersFromProducts(fallbackBannerProducts);
     final isTopContentLoading =
         sectionsAsync.isLoading ||
         adBannersAsync.isLoading ||
         categoriesAsync.isLoading;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
+    if (!isTopContentLoading) {
+      final prefetchProducts = buckets.bannerProducts
+          .take(3)
+          .toList(growable: false);
+      final prefetchCategories = categories.take(4).toList(growable: false);
+      final prefetchBanners = displayAdBanners.take(2).toList(growable: false);
+      final signature =
+          'p:${prefetchProducts.map((e) => e.id).join(",")}|'
+          'c:${prefetchCategories.map((e) => e.id).join(",")}|'
+          'b:${prefetchBanners.map((e) => e.id).join(",")}';
+
+      if (_lastPrefetchSignature != signature) {
+        _lastPrefetchSignature = signature;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+          _prefetchHomeVisuals(
+            products: prefetchProducts,
+            categories: prefetchCategories,
+            adBanners: prefetchBanners,
+          );
+        });
       }
-      _prefetchHomeVisuals(
-        products: buckets.generalProducts.take(6).toList(growable: false),
-        categories: categories,
-        adBanners: adBanners,
-      );
-    });
+    }
 
     if (sectionsAsync.isLoading && sections.isEmpty) {
       return Scaffold(
@@ -135,8 +153,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 child: _HomeAppBar(
                   onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
-                  onCartTap: () => context.goNamedSafe(AppRouteNames.cart),
-                  onWishlistTap: () => context.push('/wishlist'),
                   onSubmitted: (value) {
                     if (value.isNotEmpty) {
                       context.push('/search?q=${Uri.encodeComponent(value)}');
@@ -225,15 +241,23 @@ class _HomePageState extends ConsumerState<HomePage> {
                       backgroundColor: LexiColors.background,
                       toolbarHeight: _homeTopBarHeight,
                       titleSpacing: 0,
-                      title: _SearchHeader(
-                        controller: _searchController,
-                        onSubmitted: _submitSearch,
-                        onSearchTap: () => context.push('/search'),
-                        onMenuTap: () =>
-                            _scaffoldKey.currentState?.openDrawer(),
-                        onWishlistTap: () => context.push('/wishlist'),
-                        onCartTap: () =>
-                            context.goNamedSafe(AppRouteNames.cart),
+                      title: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: LexiSpacing.s8),
+                          Image.asset(
+                            'assets/images/logo_long.jpg',
+                            height: 32,
+                            fit: BoxFit.contain,
+                          ),
+                          _SearchHeader(
+                            controller: _searchController,
+                            onSubmitted: _submitSearch,
+                            onSearchTap: () => context.push('/search'),
+                            onMenuTap: () =>
+                                _scaffoldKey.currentState?.openDrawer(),
+                          ),
+                        ],
                       ),
                     ),
                     SliverPadding(
@@ -256,14 +280,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                                     ),
                                 children: [
                                   if (adBannersAsync.isLoading &&
-                                      adBanners.isEmpty)
+                                      displayAdBanners.isEmpty)
                                     const _SectionBlock(
                                       child: HomeBannerSkeleton(),
                                     ),
-                                  if (adBanners.isNotEmpty) ...[
+                                  if (displayAdBanners.isNotEmpty) ...[
                                     _SectionBlock(
                                       child: BannerCarouselWidget(
-                                        banners: adBanners,
+                                        banners: displayAdBanners,
                                         currentIndex: _adBannerIndex,
                                         onPageChanged: (value) {
                                           if (_adBannerIndex == value) {
@@ -347,87 +371,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                                     ),
                                   ),
                                   const SizedBox(height: LexiSpacing.s12),
-                                  ...buckets.sections.map((section) {
-                                    final isFlash =
-                                        section.type == 'flash_deals' ||
-                                        section.titleAr.contains('خصم');
-
-                                    return Column(
-                                      children: [
-                                        _SectionBlock(
-                                          title: section.titleAr,
-                                          titleColor: isFlash
-                                              ? LexiColors.discountRed
-                                              : null,
-                                          badgeText: isFlash
-                                              ? _formatCountdown(
-                                                  _flashRemaining,
-                                                )
-                                              : (section.titleAr == 'عروض اليوم'
-                                                    ? 'خصم'
-                                                    : (section.titleAr ==
-                                                              'وصل حديثاً'
-                                                          ? 'وصل حديثاً'
-                                                          : '')),
-                                          onViewAll:
-                                              section.titleAr == 'عروض اليوم' ||
-                                                  section.titleAr ==
-                                                      'أفضل العروض' ||
-                                                  section.titleAr ==
-                                                      'منتجات مخفضة'
-                                              ? () => context.go('/deals')
-                                              : null,
-                                          child: section.items.isEmpty
-                                              ? const _SectionText(
-                                                  text:
-                                                      'لا توجد منتجات حالياً.',
-                                                )
-                                              : _HorizontalProductsStrip(
-                                                  products: section.items,
-                                                  wishlistIds: wishlistIds,
-                                                  cartItems: cartItems,
-                                                  highlightBadge: isFlash
-                                                      ? 'خصم'
-                                                      : null,
-                                                  showSaleCountdown: isFlash,
-                                                  heroTagPrefix:
-                                                      'home-section-${section.id}-',
-                                                  onProductTap: (p) => context
-                                                      .push('/product/${p.id}'),
-                                                  onWishlistTap: (p) async {
-                                                    await ref
-                                                        .read(
-                                                          wishlistControllerProvider
-                                                              .notifier,
-                                                        )
-                                                        .toggle(
-                                                          p.id,
-                                                          product: p,
-                                                        );
-                                                  },
-                                                  onAddToCartTap:
-                                                      _addProductToCart,
-                                                  onShareTap: _shareProduct,
-                                                  onCommentTap:
-                                                      _openReviewShortcut,
-                                                  onCartIncrement: (p) => ref
-                                                      .read(
-                                                        cartControllerProvider
-                                                            .notifier,
-                                                      )
-                                                      .increment('${p.id}'),
-                                                  onCartDecrement: (p) => ref
-                                                      .read(
-                                                        cartControllerProvider
-                                                            .notifier,
-                                                      )
-                                                      .decrement('${p.id}'),
-                                                ),
-                                        ),
-                                        const SizedBox(height: LexiSpacing.s12),
-                                      ],
-                                    );
-                                  }),
                                 ],
                               ),
                             ),
@@ -757,29 +700,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     return text;
   }
 
-  void _startFlashCountdown() {
-    _flashTimer?.cancel();
-    _flashTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        if (_flashRemaining.inSeconds <= 0) {
-          _flashRemaining = const Duration(hours: 5, minutes: 59, seconds: 59);
-        } else {
-          _flashRemaining -= const Duration(seconds: 1);
-        }
-      });
-    });
-  }
-
-  String _formatCountdown(Duration value) {
-    final hours = value.inHours.remainder(100).toString().padLeft(2, '0');
-    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
-  }
-
   Future<void> _prefetchHomeVisuals({
     required List<ProductEntity> products,
     required List<CategoryEntity> categories,
@@ -817,7 +737,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           CachedNetworkImageProvider(url),
           context,
           onError: (e, st) {
-            // Silently handled below — prevents noisy framework error logging.
+            // Silently handled below to avoid noisy framework error logging.
           },
         );
       } catch (error) {
@@ -906,12 +826,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         break;
       }
     }
-    final sectionsForDisplay = ordered
-        .where((section) => section.type != 'hero_banner')
-        .toList(growable: false);
-
-    final allProducts = _flattenUniqueProducts(ordered);
-
     var bannerProducts = <ProductEntity>[];
     if (heroSection != null && heroSection.items.isNotEmpty) {
       bannerProducts = _uniqueById(
@@ -919,28 +833,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       ).where(_isRenderablePromoBannerProduct).take(8).toList();
     }
 
-    final generalProducts = _uniqueById(allProducts).take(24).toList();
-
-    return _MerchandisingBuckets(
-      bannerProducts: bannerProducts,
-      sections: sectionsForDisplay,
-      generalProducts: generalProducts,
-    );
-  }
-
-  List<ProductEntity> _flattenUniqueProducts(List<HomeSectionEntity> sections) {
-    final output = <ProductEntity>[];
-    final seen = <int>{};
-
-    for (final section in sections) {
-      for (final product in section.items) {
-        if (seen.add(product.id)) {
-          output.add(product);
-        }
-      }
-    }
-
-    return output;
+    return _MerchandisingBuckets(bannerProducts: bannerProducts);
   }
 
   List<ProductEntity> _uniqueById(List<ProductEntity> input) {
@@ -958,6 +851,52 @@ class _HomePageState extends ConsumerState<HomePage> {
     List<HomeAdBannerEntity> input,
   ) {
     return input.where(_isRenderableAdBanner).toList(growable: false);
+  }
+
+  List<HomeAdBannerEntity> _buildFallbackAdBannersFromProducts(
+    List<ProductEntity> products,
+  ) {
+    final banners = <HomeAdBannerEntity>[];
+    final seen = <int>{};
+
+    for (final product in products) {
+      if (!seen.add(product.id)) {
+        continue;
+      }
+
+      final image = normalizeNullableHttpUrl(
+        product.primaryImageUrl ?? product.primaryImage,
+      );
+      if (image == null || image.trim().isEmpty) {
+        continue;
+      }
+
+      final title = product.name.trim().isEmpty ? 'عروض مميزة' : product.name;
+      final subtitle = product.brandName.trim().isEmpty
+          ? 'تسوق الآن من المنتجات المميزة'
+          : 'من ${product.brandName.trim()}';
+      final badge = product.hasDiscount ? 'عرض' : 'مميز';
+
+      banners.add(
+        HomeAdBannerEntity(
+          id: 'fallback-product-${product.id}',
+          imageUrl: image,
+          linkUrl:
+              '/product/${product.id}?hero=home-fallback-banner-${product.id}',
+          titleAr: title,
+          subtitleAr: subtitle,
+          badge: badge,
+          isActive: true,
+          sortOrder: banners.length + 1,
+        ),
+      );
+
+      if (banners.length >= 4) {
+        break;
+      }
+    }
+
+    return banners;
   }
 
   bool _isRenderableAdBanner(HomeAdBannerEntity banner) {
@@ -981,14 +920,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
 class _MerchandisingBuckets {
   final List<ProductEntity> bannerProducts;
-  final List<HomeSectionEntity> sections;
-  final List<ProductEntity> generalProducts;
 
-  const _MerchandisingBuckets({
-    required this.bannerProducts,
-    required this.sections,
-    required this.generalProducts,
-  });
+  const _MerchandisingBuckets({required this.bannerProducts});
 }
 
 class _SearchHeader extends StatelessWidget {
@@ -996,16 +929,13 @@ class _SearchHeader extends StatelessWidget {
   final ValueChanged<String> onSubmitted;
   final VoidCallback onSearchTap;
   final VoidCallback onMenuTap;
-  final VoidCallback onWishlistTap;
-  final VoidCallback onCartTap;
+  // Removed unused callbacks
 
   const _SearchHeader({
     required this.controller,
     required this.onSubmitted,
     required this.onSearchTap,
     required this.onMenuTap,
-    required this.onWishlistTap,
-    required this.onCartTap,
   });
 
   @override
@@ -1076,18 +1006,6 @@ class _SearchHeader extends StatelessWidget {
           ),
           const SizedBox(width: LexiSpacing.s8),
           const NotificationBadge(),
-          const SizedBox(width: LexiSpacing.s8),
-          _TopIconButton(
-            icon: FontAwesomeIcons.heart,
-            onTap: onWishlistTap,
-            tooltip: 'المفضلة',
-          ),
-          const SizedBox(width: LexiSpacing.s8),
-          _TopIconButton(
-            icon: FontAwesomeIcons.cartShopping,
-            onTap: onCartTap,
-            tooltip: 'السلة',
-          ),
         ],
       ),
     );
@@ -1130,18 +1048,9 @@ class _TopIconButton extends StatelessWidget {
 
 class _SectionBlock extends StatelessWidget {
   final String? title;
-  final String? badgeText;
-  final Color? titleColor;
-  final VoidCallback? onViewAll;
   final Widget child;
 
-  const _SectionBlock({
-    this.title,
-    this.badgeText,
-    this.titleColor,
-    this.onViewAll,
-    required this.child,
-  });
+  const _SectionBlock({this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1163,43 +1072,10 @@ class _SectionBlock extends StatelessWidget {
                   child: Text(
                     title!,
                     style: LexiTypography.h3.copyWith(
-                      color: titleColor ?? LexiColors.darkBlack,
+                      color: LexiColors.darkBlack,
                     ),
                   ),
                 ),
-                if ((badgeText ?? '').trim().isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: LexiSpacing.s8,
-                      vertical: LexiSpacing.s4,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          (titleColor ?? LexiColors.primaryYellow) ==
-                              LexiColors.discountRed
-                          ? LexiColors.discountRed
-                          : LexiColors.primaryYellow,
-                      borderRadius: BorderRadius.circular(LexiRadius.button),
-                    ),
-                    child: Text(
-                      badgeText!,
-                      style: LexiTypography.caption.copyWith(
-                        color:
-                            (titleColor ?? LexiColors.primaryYellow) ==
-                                LexiColors.discountRed
-                            ? LexiColors.white
-                            : LexiColors.darkBlack,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                if (onViewAll != null) ...[
-                  const SizedBox(width: LexiSpacing.s8),
-                  TextButton(
-                    onPressed: onViewAll,
-                    child: const Text('عرض الكل'),
-                  ),
-                ],
               ],
             ),
             const SizedBox(height: LexiSpacing.s12),
@@ -1211,96 +1087,298 @@ class _SectionBlock extends StatelessWidget {
   }
 }
 
-class _NoonCategoriesGrid extends StatelessWidget {
+class _NoonCategoriesGrid extends StatefulWidget {
   final List<CategoryEntity> categories;
 
   const _NoonCategoriesGrid({required this.categories});
 
   @override
+  State<_NoonCategoriesGrid> createState() => _NoonCategoriesGridState();
+}
+
+class _NoonCategoriesGridState extends State<_NoonCategoriesGrid> {
+  int? _expandedParentId;
+
+  @override
   Widget build(BuildContext context) {
-    final display = categories
+    final display = widget.categories
         .where((c) => c.parentId == 0 && (c.count > 0 || c.childrenCount > 0))
-        .toList();
+        .toList(growable: false);
+    final childrenMap = _buildHomeChildrenMap(widget.categories);
+    final expandedChildren = _expandedParentId == null
+        ? const <CategoryEntity>[]
+        : childrenMap[_expandedParentId!] ?? const <CategoryEntity>[];
 
     if (display.isEmpty) {
       return const _SectionText(text: 'لا توجد فئات نشطة حالياً.');
     }
 
-    return SizedBox(
-      height: 130,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        padding: const EdgeInsetsDirectional.only(
-          start: LexiSpacing.s4,
-          end: LexiSpacing.s4,
-        ),
-        itemCount: display.length,
-        separatorBuilder: (_, _) => const SizedBox(width: LexiSpacing.s8),
-        itemBuilder: (context, index) {
-          final category = display[index];
-          return InkWell(
-            onTap: () {
-              context.push(
-                '/categories/${category.id}/products?title=${Uri.encodeComponent(category.name)}',
-              );
-            },
-            borderRadius: BorderRadius.circular(LexiRadius.button),
-            child: SizedBox(
-              width: 84,
-              child: Column(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: LexiColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: LexiColors.gray50,
-                        shape: BoxShape.circle,
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 130,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsetsDirectional.only(
+                start: LexiSpacing.s4,
+                end: LexiSpacing.s4,
+              ),
+              itemCount: display.length,
+              separatorBuilder: (_, _) => const SizedBox(width: LexiSpacing.s8),
+              itemBuilder: (context, index) {
+                final category = display[index];
+                final children =
+                    childrenMap[category.id] ?? const <CategoryEntity>[];
+                final hasLoadedChildren = children.isNotEmpty;
+                final isExpanded = _expandedParentId == category.id;
+                return _HomeCategoryItem(
+                  category: category,
+                  hasChildren: hasLoadedChildren,
+                  isExpanded: isExpanded,
+                  onTap: () => _handleParentTap(category, children),
+                );
+              },
+            ),
+          ),
+          if (expandedChildren.isNotEmpty)
+            _HomeCategoryChildrenDropdown(
+              key: ValueKey<int>(_expandedParentId!),
+              children: expandedChildren,
+              onChildTap: _openCategory,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Map<int, List<CategoryEntity>> _buildHomeChildrenMap(
+    List<CategoryEntity> categories,
+  ) {
+    final map = <int, List<CategoryEntity>>{};
+    for (final category in categories) {
+      if (category.parentId <= 0) {
+        continue;
+      }
+      map
+          .putIfAbsent(category.parentId, () => <CategoryEntity>[])
+          .add(category);
+    }
+    for (final entry in map.entries) {
+      entry.value.sort((a, b) {
+        final order = a.sortOrder.compareTo(b.sortOrder);
+        if (order != 0) {
+          return order;
+        }
+        return a.name.compareTo(b.name);
+      });
+    }
+    return map;
+  }
+
+  void _handleParentTap(
+    CategoryEntity category,
+    List<CategoryEntity> children,
+  ) {
+    if (children.isEmpty) {
+      _openCategory(category);
+      return;
+    }
+
+    setState(() {
+      _expandedParentId = _expandedParentId == category.id ? null : category.id;
+    });
+  }
+
+  void _openCategory(CategoryEntity category) {
+    context.push(
+      '/categories/${category.id}/products?title=${Uri.encodeComponent(category.name)}',
+    );
+  }
+}
+
+class _HomeCategoryItem extends StatelessWidget {
+  final CategoryEntity category;
+  final bool hasChildren;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _HomeCategoryItem({
+    required this.category,
+    required this.hasChildren,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(LexiRadius.button),
+      child: SizedBox(
+        width: 84,
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: LexiColors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
-                      child: ClipOval(
-                        child: (category.image ?? '').trim().isEmpty
-                            ? Center(
-                                child: FaIcon(
-                                  FontAwesomeIcons.shapes,
-                                  size: 18,
-                                  color: LexiColors.primaryYellow.withValues(
-                                    alpha: 0.8,
-                                  ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(2),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: LexiColors.gray50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: ClipOval(
+                      child: (category.image ?? '').trim().isEmpty
+                          ? Center(
+                              child: FaIcon(
+                                FontAwesomeIcons.shapes,
+                                size: 18,
+                                color: LexiColors.primaryYellow.withValues(
+                                  alpha: 0.8,
                                 ),
-                              )
-                            : LexiNetworkImage(
-                                imageUrl: category.image,
-                                fit: BoxFit.cover,
                               ),
+                            )
+                          : LexiNetworkImage(
+                              imageUrl: category.image,
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                ),
+                if (hasChildren)
+                  PositionedDirectional(
+                    end: -2,
+                    bottom: -2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: isExpanded
+                            ? LexiColors.primaryYellow
+                            : LexiColors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: LexiColors.gray100),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(3),
+                        child: Icon(
+                          isExpanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          size: 14,
+                          color: LexiColors.darkBlack,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: LexiSpacing.s8),
-                  SizedBox(
-                    height: 44,
+              ],
+            ),
+            const SizedBox(height: LexiSpacing.s8),
+            SizedBox(
+              height: 44,
+              child: Text(
+                category.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: LexiTypography.caption.copyWith(
+                  color: LexiColors.darkBlack,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeCategoryChildrenDropdown extends StatelessWidget {
+  final List<CategoryEntity> children;
+  final ValueChanged<CategoryEntity> onChildTap;
+
+  const _HomeCategoryChildrenDropdown({
+    super.key,
+    required this.children,
+    required this.onChildTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsetsDirectional.only(top: LexiSpacing.s8),
+      padding: const EdgeInsets.all(LexiSpacing.s8),
+      decoration: BoxDecoration(
+        color: LexiColors.white,
+        borderRadius: BorderRadius.circular(LexiRadius.lg),
+        border: Border.all(color: LexiColors.gray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        runAlignment: WrapAlignment.end,
+        spacing: LexiSpacing.s8,
+        runSpacing: LexiSpacing.s8,
+        children: children.map((child) {
+          return InkWell(
+            onTap: () => onChildTap(child),
+            borderRadius: BorderRadius.circular(LexiRadius.button),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 36, maxWidth: 150),
+              padding: const EdgeInsetsDirectional.symmetric(
+                horizontal: LexiSpacing.s12,
+                vertical: LexiSpacing.s8,
+              ),
+              decoration: BoxDecoration(
+                color: LexiColors.gray50,
+                borderRadius: BorderRadius.circular(LexiRadius.button),
+                border: Border.all(color: LexiColors.gray100),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const FaIcon(
+                    FontAwesomeIcons.tag,
+                    size: 12,
+                    color: LexiColors.gray500,
+                  ),
+                  const SizedBox(width: LexiSpacing.s4),
+                  Flexible(
                     child: Text(
-                      category.name,
-                      maxLines: 2,
+                      child.name,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
                       style: LexiTypography.caption.copyWith(
                         color: LexiColors.darkBlack,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -1308,107 +1386,7 @@ class _NoonCategoriesGrid extends StatelessWidget {
               ),
             ),
           );
-        },
-      ),
-    );
-  }
-}
-
-class _HorizontalProductsStrip extends StatelessWidget {
-  final List<ProductEntity> products;
-  final Set<int> wishlistIds;
-  final List<CartItem> cartItems;
-  final String? highlightBadge;
-  final bool showSaleCountdown;
-  final String heroTagPrefix;
-  final ValueChanged<ProductEntity> onProductTap;
-  final Future<void> Function(ProductEntity product) onWishlistTap;
-  final Future<void> Function(ProductEntity product) onAddToCartTap;
-  final Future<void> Function(ProductEntity product) onShareTap;
-  final Future<void> Function(ProductEntity product) onCommentTap;
-  final void Function(ProductEntity product)? onCartIncrement;
-  final void Function(ProductEntity product)? onCartDecrement;
-
-  const _HorizontalProductsStrip({
-    required this.products,
-    required this.wishlistIds,
-    this.cartItems = const [],
-    this.highlightBadge,
-    this.showSaleCountdown = false,
-    required this.heroTagPrefix,
-    required this.onProductTap,
-    required this.onWishlistTap,
-    required this.onAddToCartTap,
-    required this.onShareTap,
-    required this.onCommentTap,
-    this.onCartIncrement,
-    this.onCartDecrement,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 375,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: products.length.clamp(0, 14).toInt(),
-        separatorBuilder: (_, _) => const SizedBox(width: LexiSpacing.s12),
-        itemBuilder: (context, index) {
-          final product = products[index];
-          final tag = '$heroTagPrefix${product.id}';
-          final cKey = '${product.id}';
-          final cQty =
-              cartItems.where((e) => e.cartKey == cKey).firstOrNull?.qty ?? 0;
-          return SizedBox(
-            width: 214,
-            child: ProductCard(
-              productId: product.id,
-              heroTag: tag,
-              name: product.name,
-              descriptionSnippet: product.shortDescription.isNotEmpty
-                  ? product.shortDescription
-                  : product.description,
-              price: CurrencyFormatter.formatAmountOrUnavailable(product.price),
-              oldPrice: product.hasDiscount
-                  ? CurrencyFormatter.formatAmount(product.regularPrice)
-                  : null,
-              imageUrls: product.effectiveCardImages,
-              rating: product.rating,
-              reviewsCount: product.reviewsCount,
-              brandName: product.brandName,
-              onBrandTap: product.brandName.trim().isNotEmpty
-                  ? () {
-                      context.push(
-                        AppRoutePaths.brandProductsFromCard(
-                          brandName: product.brandName,
-                          brandId: product.brandId,
-                        ),
-                      );
-                    }
-                  : null,
-              discountPercent: product.discountPercentage,
-              badgeText: highlightBadge,
-              showSaleCountdown: showSaleCountdown,
-              isWishlisted: wishlistIds.contains(product.id),
-              canAddToCart: product.inStock && product.price > 0,
-              cartQty: cQty,
-              onIncrement: onCartIncrement != null
-                  ? () => onCartIncrement!(product)
-                  : null,
-              onDecrement: onCartDecrement != null
-                  ? () => onCartDecrement!(product)
-                  : null,
-              showAddToCartSuccessAlert: false,
-              onTap: () => context.push('/product/${product.id}?hero=$tag'),
-              onWishlistToggle: () => onWishlistTap(product),
-              onAddToCart: () => onAddToCartTap(product),
-              onShare: () => onShareTap(product),
-              onComment: () => onCommentTap(product),
-              saleEndDate: product.saleEndDate,
-              wishlistCount: product.wishlistCount,
-            ),
-          );
-        },
+        }).toList(),
       ),
     );
   }
@@ -1510,74 +1488,59 @@ class _SectionText extends StatelessWidget {
 
 class _HomeAppBar extends StatelessWidget {
   final VoidCallback onMenuTap;
-  final VoidCallback onCartTap;
-  final VoidCallback onWishlistTap;
+  // Removed unused callbacks
   final ValueChanged<String> onSubmitted;
 
-  const _HomeAppBar({
-    required this.onMenuTap,
-    required this.onCartTap,
-    required this.onWishlistTap,
-    required this.onSubmitted,
-  });
+  const _HomeAppBar({required this.onMenuTap, required this.onSubmitted});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          onPressed: onMenuTap,
-          icon: const Icon(Icons.menu, color: LexiColors.brandBlack),
+        const SizedBox(height: LexiSpacing.s8),
+        Image.asset(
+          'assets/images/logo_long.jpg',
+          height: 32,
+          fit: BoxFit.contain,
         ),
-        const SizedBox(width: LexiSpacing.s8),
-        Expanded(
-          child: Container(
-            height: 48,
-            decoration: BoxDecoration(
-              color: LexiColors.white,
-              borderRadius: BorderRadius.circular(LexiRadius.full),
-              border: Border.all(color: LexiColors.neutral200),
-            ),
-            child: TextField(
-              textInputAction: TextInputAction.search,
-              onSubmitted: onSubmitted,
-              decoration: InputDecoration(
-                hintText: 'ابحث عن المنتجات...',
-                hintStyle: LexiTypography.bodySm,
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: LexiColors.neutral500,
-                  size: 20,
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: LexiSpacing.md,
-                  vertical: LexiSpacing.s12,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: LexiSpacing.s8),
-        IconButton(
-          onPressed: onWishlistTap,
-          icon: const FaIcon(
-            FontAwesomeIcons.heart,
-            size: 20,
-            color: LexiColors.brandBlack,
-          ),
-        ),
-        Stack(
+        Row(
           children: [
             IconButton(
-              onPressed: onCartTap,
-              icon: const FaIcon(
-                FontAwesomeIcons.bagShopping,
-                size: 20,
-                color: LexiColors.brandBlack,
+              onPressed: onMenuTap,
+              icon: const Icon(Icons.menu, color: LexiColors.brandBlack),
+            ),
+            const SizedBox(width: LexiSpacing.s8),
+            Expanded(
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: LexiColors.white,
+                  borderRadius: BorderRadius.circular(LexiRadius.full),
+                  border: Border.all(color: LexiColors.neutral200),
+                ),
+                child: TextField(
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: onSubmitted,
+                  decoration: InputDecoration(
+                    hintText: 'ابحث عن المنتجات...',
+                    hintStyle: LexiTypography.bodySm,
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: LexiColors.neutral500,
+                      size: 20,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: LexiSpacing.md,
+                      vertical: LexiSpacing.s12,
+                    ),
+                  ),
+                ),
               ),
             ),
-            const Positioned(top: 4, right: 4, child: NotificationBadge()),
+            const SizedBox(width: LexiSpacing.s8),
+            const NotificationBadge(),
           ],
         ),
       ],

@@ -118,7 +118,10 @@ class _AdminEditFlashDealPageState
               ),
               items: categories
                   .map(
-                    (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    (c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text(c.hierarchyLabel),
+                    ),
                   )
                   .toList(),
               onChanged: (val) {

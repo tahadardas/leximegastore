@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 import 'logging_config.dart';
 
@@ -19,6 +21,7 @@ abstract final class AppLogger {
 
   static bool _initialized = false;
   static bool _sentryReady = false;
+  static bool _crashlyticsReady = false;
 
   static Future<void> initialize() async {
     if (_initialized) {
@@ -35,6 +38,17 @@ abstract final class AppLogger {
         options.sendDefaultPii = false;
       }, appRunner: () {});
       _sentryReady = true;
+    }
+
+    if (!kIsWeb) {
+      try {
+        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+          !kDebugMode,
+        );
+        _crashlyticsReady = true;
+      } catch (e) {
+        _logger.w('Crashlytics initialization failed: $e');
+      }
     }
 
     await _setDefaultContext();
@@ -95,6 +109,17 @@ abstract final class AppLogger {
   }) async {
     final clean = sanitizeExtra(extra);
     _logger.e(_compose(message, clean), error: error, stackTrace: stackTrace);
+
+    if (_crashlyticsReady) {
+      unawaited(
+        FirebaseCrashlytics.instance.recordError(
+          error,
+          stackTrace,
+          reason: message,
+          information: clean.isNotEmpty ? [jsonEncode(clean)] : [],
+        ),
+      );
+    }
 
     if (!_sentryReady) {
       return;

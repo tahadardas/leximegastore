@@ -56,6 +56,15 @@ class AuthService {
   static const _authLogoutPathWpJson = '/wp-json/lexi/v1/auth/logout';
   static const _authMePathRestRoute = '/index.php?rest_route=/lexi/v1/auth/me';
   static const _authMePathWpJson = '/wp-json/lexi/v1/auth/me';
+  static const _wpUsersMePathRestRoute =
+      '/index.php?rest_route=/wp/v2/users/me&context=edit';
+  static const _wpUsersMePathWpJson = '/wp-json/wp/v2/users/me?context=edit';
+  static const _jwtTokenPathRestRoute =
+      '/index.php?rest_route=/jwt-auth/v1/token';
+  static const _jwtTokenPathWpJson = '/wp-json/jwt-auth/v1/token';
+  static const _jwtValidatePathRestRoute =
+      '/index.php?rest_route=/jwt-auth/v1/token/validate';
+  static const _jwtValidatePathWpJson = '/wp-json/jwt-auth/v1/token/validate';
 
   AuthService(this._dio);
 
@@ -72,8 +81,14 @@ class AuthService {
 
       return _parseAuthSessionResponse(response.data);
     } on DioException catch (e) {
+      if (_isLikelyMissingLexiAuthRoute(e)) {
+        return _loginViaJwt(username, password);
+      }
       throw AppFailure(ApiErrorMapper.map(e), _errorCodeFromDio(e));
     } catch (e) {
+      if (e is AppFailure && _isLikelyMissingLexiAuthFailure(e)) {
+        return _loginViaJwt(username, password);
+      }
       throw AppFailure(ApiErrorMapper.map(e));
     }
   }
@@ -145,9 +160,15 @@ class AuthService {
         refreshExpiresIn: _toInt(payload['refresh_expires_in']),
       );
     } on DioException catch (e) {
+      if (_isLikelyMissingLexiAuthRoute(e)) {
+        return _refreshViaJwtValidation(refreshToken);
+      }
       throw AppFailure(ApiErrorMapper.map(e), _errorCodeFromDio(e));
     } catch (e) {
       if (e is AppFailure) {
+        if (_isLikelyMissingLexiAuthFailure(e)) {
+          return _refreshViaJwtValidation(refreshToken);
+        }
         rethrow;
       }
       throw AppFailure(ApiErrorMapper.map(e));
@@ -185,7 +206,10 @@ class AuthService {
   Future<Map<String, dynamic>> getMe(String accessToken) async {
     try {
       final response = await _getWithFallback(
-        _routeCandidates(_authMePathRestRoute, _authMePathWpJson),
+        <String>[
+          ..._routeCandidates(_authMePathRestRoute, _authMePathWpJson),
+          ..._routeCandidates(_wpUsersMePathRestRoute, _wpUsersMePathWpJson),
+        ],
         options: Options(
           headers: {'Authorization': 'Bearer ${accessToken.trim()}'},
         ),
@@ -194,12 +218,14 @@ class AuthService {
       final payload = _extractPayloadMap(response.data);
       final user = payload['user'];
       if (user is Map<String, dynamic>) {
-        return user;
+        return _normalizeUserMap(user);
       }
       if (user is Map) {
-        return user.map((key, value) => MapEntry(key.toString(), value));
+        return _normalizeUserMap(
+          user.map((key, value) => MapEntry(key.toString(), value)),
+        );
       }
-      return payload;
+      return _normalizeUserMap(payload);
     } on DioException catch (e) {
       throw AppFailure(ApiErrorMapper.map(e), _errorCodeFromDio(e));
     } catch (e) {
@@ -221,9 +247,11 @@ class AuthService {
     final userRaw = payload['user'];
     Map<String, dynamic>? user;
     if (userRaw is Map<String, dynamic>) {
-      user = userRaw;
+      user = _normalizeUserMap(userRaw);
     } else if (userRaw is Map) {
-      user = userRaw.map((key, value) => MapEntry(key.toString(), value));
+      user = _normalizeUserMap(
+        userRaw.map((key, value) => MapEntry(key.toString(), value)),
+      );
     }
 
     return AuthSessionResponse(
@@ -377,6 +405,204 @@ class AuthService {
       }
     }
     return attempts.toSet().toList(growable: false);
+  }
+
+  Future<AuthSessionResponse> _loginViaJwt(
+    String username,
+    String password,
+  ) async {
+    final response = await _postWithFallback(
+      _routeCandidates(_jwtTokenPathRestRoute, _jwtTokenPathWpJson),
+      data: {'username': username.trim(), 'password': password},
+      options: Options(
+        contentType: Headers.formUrlEncodedContentType,
+        headers: const {'Accept': 'application/json'},
+      ),
+    );
+
+    final payload = _extractPayloadMap(response.data);
+    final accessToken = _extractAccessToken(payload);
+    if (accessToken.isEmpty) {
+      throw AppFailure('No access token returned by JWT endpoint.');
+    }
+
+    final roleHint = (payload['role'] ?? payload['user_role'] ?? '').toString();
+    final fallbackUser = _normalizeUserMap(<String, dynamic>{
+      'email': (payload['user_email'] ?? '').toString(),
+      'display_name': (payload['user_display_name'] ?? '').toString(),
+      'user_login': (payload['user_nicename'] ?? username).toString(),
+      'role': roleHint,
+      'roles':
+          payload['roles'] ??
+          (roleHint.trim().isEmpty ? const <String>[] : <String>[roleHint]),
+    });
+    Map<String, dynamic> user = fallbackUser;
+    try {
+      final freshUser = await getMe(accessToken);
+      if (freshUser.isNotEmpty) {
+        user = _normalizeUserMap(<String, dynamic>{
+          ...fallbackUser,
+          ...freshUser,
+        });
+      }
+    } catch (_) {
+      // Keep login flow resilient when profile endpoints are unavailable.
+    }
+
+    return AuthSessionResponse(
+      accessToken: accessToken,
+      // JWT plugin has no refresh-token contract. Keep token as fallback
+      // session key so legacy/partial backends still allow customer login.
+      refreshToken: accessToken,
+      expiresIn: _jwtExpiresIn(accessToken),
+      user: user,
+    );
+  }
+
+  Future<AuthTokens> _refreshViaJwtValidation(String token) async {
+    final normalized = token.trim();
+    if (normalized.isEmpty) {
+      throw AppFailure('Refresh token is required.');
+    }
+
+    await _postWithFallback(
+      _routeCandidates(_jwtValidatePathRestRoute, _jwtValidatePathWpJson),
+      data: const <String, dynamic>{},
+      options: Options(
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $normalized',
+        },
+      ),
+    );
+
+    return AuthTokens(
+      accessToken: normalized,
+      refreshToken: normalized,
+      expiresIn: _jwtExpiresIn(normalized),
+    );
+  }
+
+  Map<String, dynamic> _normalizeUserMap(Map<String, dynamic> raw) {
+    final rolesRaw = raw['roles'];
+    final roles = <String>[];
+    if (rolesRaw is List) {
+      for (final entry in rolesRaw) {
+        final value = entry.toString().trim();
+        if (value.isNotEmpty) {
+          roles.add(value);
+        }
+      }
+    } else if (rolesRaw is String) {
+      final value = rolesRaw.trim();
+      if (value.isNotEmpty) {
+        roles.add(value);
+      }
+    } else if (rolesRaw is Map) {
+      for (final entry in rolesRaw.entries) {
+        final allowed = entry.value == true || entry.value == 1;
+        if (!allowed) {
+          continue;
+        }
+        final value = entry.key.toString().trim();
+        if (value.isNotEmpty) {
+          roles.add(value);
+        }
+      }
+    }
+
+    final roleField = (raw['role'] ?? raw['user_role'] ?? '').toString().trim();
+    if (roleField.isNotEmpty && !roles.contains(roleField)) {
+      roles.add(roleField);
+    }
+
+    String avatarUrl = (raw['avatar_url'] ?? '').toString().trim();
+    if (avatarUrl.isEmpty && raw['avatar_urls'] is Map) {
+      final avatarMap = (raw['avatar_urls'] as Map).map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final preferred =
+          avatarMap['96'] ?? avatarMap['48'] ?? avatarMap['24'] ?? '';
+      avatarUrl = preferred.toString().trim();
+    }
+
+    final email = (raw['email'] ?? '').toString().trim();
+    final username =
+        (raw['user_login'] ??
+                raw['username'] ??
+                raw['slug'] ??
+                raw['user_nicename'] ??
+                '')
+            .toString()
+            .trim();
+    final displayName = (raw['display_name'] ?? raw['name'] ?? username)
+        .toString()
+        .trim();
+
+    return <String, dynamic>{
+      ...raw,
+      'email': email,
+      'user_login': username,
+      'username': username,
+      'role': roleField,
+      'display_name': displayName,
+      'roles': roles,
+      'avatar_url': avatarUrl,
+    };
+  }
+
+  int? _jwtExpiresIn(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length < 2) {
+        return null;
+      }
+      final normalized = base64Url.normalize(parts[1]);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+      final payload = jsonDecode(decoded);
+      if (payload is! Map) {
+        return null;
+      }
+      final expRaw = payload['exp'];
+      final exp = expRaw is int ? expRaw : int.tryParse('$expRaw');
+      if (exp == null || exp <= 0) {
+        return null;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final remaining = exp - now;
+      return remaining > 0 ? remaining : 0;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isLikelyMissingLexiAuthRoute(DioException error) {
+    final status = error.response?.statusCode ?? 0;
+    if (status != 404 && status != 405) {
+      return false;
+    }
+    return _looksLikeNoRouteBody(error.response?.data);
+  }
+
+  bool _isLikelyMissingLexiAuthFailure(AppFailure error) {
+    final code = (error.code ?? '').toLowerCase();
+    if (code == 'rest_no_route') {
+      return true;
+    }
+    return _looksLikeNoRouteBody(error.message);
+  }
+
+  bool _looksLikeNoRouteBody(dynamic body) {
+    final lower = (body ?? '').toString().toLowerCase();
+    if (lower.trim().isEmpty) {
+      return false;
+    }
+    return lower.contains('rest_no_route') ||
+        lower.contains(
+          'no route was found matching the url and request method',
+        ) ||
+        lower.contains('لم يتم العثور على مسار يتوافق مع الرابط');
   }
 
   dynamic _decodeJsonLike(dynamic raw) {

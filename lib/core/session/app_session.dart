@@ -47,7 +47,7 @@ class AppSession extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn;
   bool get biometricEnabled => _biometricEnabled;
   bool get isAdmin => _role == 'administrator' || _role == 'shop_manager';
-  bool get isDeliveryAgent => _role == 'delivery_agent';
+  bool get isDeliveryAgent => _role == 'delivery_agent' || _role == 'courier';
   bool get isLoading => _isLoading;
   String? get token => _token;
   String? get refreshToken => _refreshToken;
@@ -107,7 +107,7 @@ class AppSession extends ChangeNotifier {
     if ((refreshToken ?? '').trim().isNotEmpty) {
       _refreshToken = refreshToken!.trim();
     }
-    _role = role.trim();
+    _role = role.trim().toLowerCase();
     _displayName = displayName.trim();
     _email = email.trim();
     _phone = (phone ?? '').trim();
@@ -383,9 +383,30 @@ class AppSession extends ChangeNotifier {
     String accessToken, {
     String? refreshToken,
   }) async {
-    final displayName = (user['display_name'] ?? '').toString();
-    final email = (user['email'] ?? '').toString();
-    final role = _resolveRole(user);
+    var resolvedUser = Map<String, dynamic>.from(user);
+    var role = _resolveRole(resolvedUser);
+
+    final shouldProbeRole =
+        role == 'customer' &&
+        _shouldProbeRoleFromMe(resolvedUser) &&
+        accessToken.trim().isNotEmpty;
+    if (shouldProbeRole) {
+      try {
+        final fresh = await _authService.getMe(accessToken);
+        if (fresh.isNotEmpty) {
+          resolvedUser = <String, dynamic>{...resolvedUser, ...fresh};
+          final freshRole = _resolveRole(resolvedUser);
+          if (freshRole.isNotEmpty) {
+            role = freshRole;
+          }
+        }
+      } catch (_) {
+        // Keep login resilient when role probe endpoint is unavailable.
+      }
+    }
+
+    final displayName = (resolvedUser['display_name'] ?? '').toString();
+    final email = (resolvedUser['email'] ?? '').toString();
 
     await saveSession(
       token: accessToken,
@@ -393,25 +414,98 @@ class AppSession extends ChangeNotifier {
       role: role,
       displayName: displayName,
       email: email,
-      phone: (user['billing_phone'] ?? user['phone'] ?? '').toString(),
-      address1: (user['billing_address_1'] ?? user['address_1'] ?? '')
+      phone: (resolvedUser['billing_phone'] ?? resolvedUser['phone'] ?? '')
           .toString(),
-      city: (user['billing_city'] ?? user['city'] ?? '').toString(),
+      address1:
+          (resolvedUser['billing_address_1'] ?? resolvedUser['address_1'] ?? '')
+              .toString(),
+      city: (resolvedUser['billing_city'] ?? resolvedUser['city'] ?? '')
+          .toString(),
     );
   }
 
   String _resolveRole(Map<String, dynamic> user) {
-    final roles = List<String>.from(user['roles'] ?? const <String>[]);
-    if (user['is_admin'] == true || roles.contains('administrator')) {
+    final roles = _extractRoles(user);
+    final roleField = _normalizeRole(
+      (user['role'] ?? user['user_role'] ?? '').toString(),
+    );
+
+    if (_coerceBool(user['is_admin']) ||
+        roles.contains('administrator') ||
+        roleField == 'administrator') {
       return 'administrator';
     }
-    if (roles.contains('shop_manager')) {
+    if (roles.contains('shop_manager') || roleField == 'shop_manager') {
       return 'shop_manager';
     }
-    if (roles.contains('delivery_agent')) {
+    final capabilities = user['capabilities'];
+    final hasDeliveryCapability =
+        capabilities is Map &&
+        (_coerceBool(capabilities['lexi_delivery_agent']) ||
+            _coerceBool(capabilities['delivery_agent']));
+
+    if (roles.contains('delivery_agent') ||
+        roles.contains('courier') ||
+        roleField == 'delivery_agent' ||
+        roleField == 'courier' ||
+        _coerceBool(user['is_delivery_agent']) ||
+        hasDeliveryCapability) {
       return 'delivery_agent';
     }
     return 'customer';
+  }
+
+  bool _shouldProbeRoleFromMe(Map<String, dynamic> user) {
+    if (_extractRoles(user).isNotEmpty) {
+      return false;
+    }
+    final roleField = _normalizeRole(
+      (user['role'] ?? user['user_role'] ?? '').toString(),
+    );
+    if (roleField.isNotEmpty) {
+      return false;
+    }
+    if (_coerceBool(user['is_admin']) ||
+        _coerceBool(user['is_delivery_agent'])) {
+      return false;
+    }
+    return true;
+  }
+
+  Set<String> _extractRoles(Map<String, dynamic> user) {
+    final roles = <String>{};
+    final raw = user['roles'];
+
+    if (raw is List) {
+      for (final value in raw) {
+        final role = _normalizeRole(value.toString());
+        if (role.isNotEmpty) {
+          roles.add(role);
+        }
+      }
+    } else if (raw is String) {
+      final role = _normalizeRole(raw);
+      if (role.isNotEmpty) {
+        roles.add(role);
+      }
+    }
+
+    return roles;
+  }
+
+  String _normalizeRole(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  bool _coerceBool(dynamic value) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    final text = (value ?? '').toString().trim().toLowerCase();
+    return text == '1' || text == 'true' || text == 'yes' || text == 'on';
   }
 
   bool _isUnauthorizedFailure(Object error) {

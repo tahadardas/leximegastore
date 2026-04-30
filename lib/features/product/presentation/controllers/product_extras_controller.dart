@@ -8,6 +8,7 @@ import '../../data/models/product_model.dart';
 import '../../domain/entities/product_entity.dart';
 import '../../domain/entities/product_extras.dart';
 import '../../domain/entities/product_mapper.dart';
+import 'product_details_controller.dart';
 
 final productExtrasApiProvider = Provider<ProductExtrasApi>((ref) {
   return ProductExtrasApi(ref.watch(dioClientProvider));
@@ -15,7 +16,12 @@ final productExtrasApiProvider = Provider<ProductExtrasApi>((ref) {
 
 final productDetailsExtrasProvider = FutureProvider.family
     .autoDispose<ProductDetailsExtras, int>((ref, id) async {
-      return ref.read(productExtrasApiProvider).fetchExtras(id);
+      final product = await ref.watch(
+        productDetailsControllerProvider(id.toString()).future,
+      );
+      return ref
+          .read(productExtrasApiProvider)
+          .fetchExtras(id, includeVariations: product.isVariable);
     });
 
 final similarProductsProvider = FutureProvider.family
@@ -28,33 +34,38 @@ class ProductExtrasApi {
 
   ProductExtrasApi(this._client);
 
-  Future<ProductDetailsExtras> fetchExtras(int productId) async {
+  Future<ProductDetailsExtras> fetchExtras(
+    int productId, {
+    bool includeVariations = true,
+  }) async {
     List<ProductVariationOption> variations = const [];
     List<ProductReviewItem> reviews = const [];
 
-    try {
-      final details = await _client.get(
-        Endpoints.productById(productId.toString()),
-        options: Options(extra: const {'requiresAuth': false}),
-      );
-      final detailsMap = extractMap(details.data);
-      final variationsRaw =
-          detailsMap['variations'] ??
-          extractMap(detailsMap['data'])['variations'] ??
-          const <dynamic>[];
-      if (variationsRaw is List) {
-        variations = variationsRaw
-            .whereType<Map>()
-            .map(
-              (e) => ProductVariationOption.fromJson(
-                e.map((key, value) => MapEntry(key.toString(), value)),
-              ),
-            )
-            .where((e) => e.id > 0)
-            .toList();
+    if (includeVariations) {
+      try {
+        final details = await _client.get(
+          Endpoints.productById(productId.toString()),
+          options: Options(extra: const {'requiresAuth': false}),
+        );
+        final detailsMap = extractMap(details.data);
+        final variationsRaw =
+            detailsMap['variations'] ??
+            extractMap(detailsMap['data'])['variations'] ??
+            const <dynamic>[];
+        if (variationsRaw is List) {
+          variations = variationsRaw
+              .whereType<Map>()
+              .map(
+                (e) => ProductVariationOption.fromJson(
+                  e.map((key, value) => MapEntry(key.toString(), value)),
+                ),
+              )
+              .where((e) => e.id > 0)
+              .toList();
+        }
+      } catch (_) {
+        // Keep fallback empty variation list.
       }
-    } catch (_) {
-      // Keep fallback empty variation list.
     }
 
     try {

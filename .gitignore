@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Secrets / credentials (must never be committed)
+*.jks
+*.keystore
+key.properties
+.env
+.env.*
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+**/google-services.json
+leximeganew-*.json
+wp/lexi-api/leximegastore-*-firebase-adminsdk-*.json
